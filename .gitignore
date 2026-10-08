@@ -1,0 +1,6 @@
+node_modules/
+.qa/
+.env
+.env.*
+*.log
+.sites-runtime/
