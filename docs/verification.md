@@ -13,13 +13,18 @@
 - 확인한 브라우저 흐름의 warn/error 로그 0개. 배포 직전 npm test와 npm run check 재실행 PASS.
 - UTF-8 유효성·BOM 없음·CRLF 정규화 확인. 환경 파일 없음, 일반적인 토큰/DB URL 패턴 검사에서 일치 없음(포괄적인 보안 감사는 아님).
 
-## REMOTE_CI — NOT_RUN
+## REMOTE_CI — PASS
 
-아직 첫 원격 배포 전입니다. 완료 후 run과 소스 커밋을 기록합니다.
+- [GitHub Actions 시험·검사·배포 성공](https://github.com/HyungminYoon1/orbit-courier/actions/runs/37790257168)
+- 검증한 앱 소스 커밋: 66705d3ae3dcbd18584a5d2f6023ffb3bf865e22. verify의 npm test/npm run check 및 deploy 모두 success 확인.
+- 이 검증 기록의 후속 갱신은 문서만 변경하며 dist 앱 소스는 동일합니다.
 
-## LIVE — NOT_RUN
+## LIVE — PASS
 
-아직 첫 원격 배포 전입니다. 공개 URL·파일 일치·브라우저 플레이 확인 후 갱신합니다.
+- [공개 사이트](https://hyungminyoon1.github.io/orbit-courier/) HTTPS 접속 확인.
+- dist의 6개 파일(HTML/CSS/app/core/model 또는 questions/favicon) HTTP 200 및 로컬 SHA-256 바이트 일치.
+- 항로 112uk48-je4oag, -5°/300과 힌트로 배송 완료 664점 확인.
+- 확인한 공개 흐름의 warn/error 로그 0개. 기본 화면·전체 화면 JPEG 증거는 별도 로컬 QA 폴더에 저장했고 공개 저장소에 개인 PC 경로나 QA 기록을 올리지 않음.
 
 ## 범위와 한계
 
