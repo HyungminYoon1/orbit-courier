@@ -14,7 +14,7 @@ let stars = [];
 const value = (id) => Number($(id).value);
 const plan = () => ({ angle: value("angle"), power: value("power"), burn: value("burn"), burnAt: value("burnAt") });
 const n = (number, digits = 1) => Number.isFinite(number) ? number.toFixed(digits) : "—";
-const labels = { orbit: "궤도 유지", escape: "탈출", delivery: "속도 제한 배송", flyby: "근접 통과 배송" };
+const labels = { orbit: "한 바퀴 궤도 비행", escape: "행성 탈출", delivery: "정거장 도착", flyby: "중력으로 방향 바꾸기" };
 
 function save() {
   const saved = saveLocal(KEY, record);
@@ -52,13 +52,20 @@ function controls() {
 function requirements() {
   const m = scene.mission;
   if (m.type === "orbit") return [
-    `중심 반경 ${n(m.radius * (1 - m.tolerance))}–${n(m.radius * (1 + m.tolerance))} 유지`,
-    `중심 행성 기준 이심률 e ≤ ${m.maxEccentricity} (원에 가까울수록 0)`,
-    `두 조건을 연속 ${m.turns}바퀴 유지 · 벗어나면 진행률 초기화`,
+    `아틀라스 중심과의 거리 ${n(m.radius * (1 - m.tolerance))}–${n(m.radius * (1 + m.tolerance))} 유지하기`,
+    `원에 가까운 궤도 유지하기 (이심률 e ≤ ${m.maxEccentricity}, 0이면 원형)`,
+    `위 조건을 지키며 ${m.turns}바퀴 돌기 · 조건을 벗어나면 회전 진행률이 0으로 돌아갑니다.`,
   ];
-  if (m.type === "escape") return [`중심 반경 ${m.radius} 이상의 탈출 경계 통과`, "총 비에너지 E > 0 · 바깥 방향 속도 > 0"];
-  const result = [`정거장 중심에서 ${scene.target.radius} 이내로 진입`, `진입 속도 ≤ ${scene.target.maxSpeed} · 충돌 없이 도착`];
-  if (m.type === "flyby") result.unshift(`아틀라스 반경 ${m.near} 이내 → ${m.exit} 밖 · 무분사 방향 전환 ≥ ${m.minTurn}°`);
+  if (m.type === "escape") return [
+    `아틀라스 중심에서 ${m.radius} 이상 멀어지기`,
+    "경계를 지날 때 바깥쪽으로 이동하기 (바깥 방향 속도 > 0)",
+    "행성에 다시 붙잡히지 않을 에너지 확보하기 (E > 0)",
+  ];
+  const result = [`초록색 정거장 구역 안으로 들어가기 (중심에서 ${scene.target.radius} 이내)`, `진입 속도 ${scene.target.maxSpeed} 이하로 도착하기 · 행성과 충돌하지 않기`];
+  if (m.type === "flyby") result.unshift(
+    `아틀라스 중심에서 ${m.near} 이내까지 접근한 뒤 ${m.exit} 밖으로 나오기`,
+    `점선 안에서는 엔진을 분사하지 않고 중력으로 방향을 ${m.minTurn}° 이상 바꾸기`,
+  );
   return result;
 }
 function sector(resume, persist = true) {
@@ -111,14 +118,14 @@ function telemetry(point) {
   let progress = 0, text = "";
   if (m.type === "orbit") {
     progress = Math.min(100, q.turns / m.turns * 100);
-    text = `${q.orbitActive ? "유지 중" : "궤도 조건 대기"} · ${n(q.turns, 2)} / ${m.turns}바퀴`;
+    text = `${q.orbitActive ? "궤도를 따라 도는 중" : "궤도 조건을 맞추세요"} · ${n(q.turns, 2)} / ${m.turns}바퀴`;
   } else if (m.type === "escape") {
     progress = Math.min(100, q.radius / m.radius * 100);
-    text = `반경 ${n(q.radius)} / ${m.radius} · E ${q.conservedEnergy > 1e-6 ? "> 0 충족" : "≤ 0 미달"} · 방사속도 ${n(q.radialSpeed)}`;
+    text = `행성 중심 거리 ${n(q.radius)} / 목표 ${m.radius} · E ${q.conservedEnergy > 1e-6 ? "> 0 충족" : "≤ 0 미달"} · 바깥 방향 속도 ${n(q.radialSpeed)}`;
   } else {
     progress = Math.max(0, Math.min(100, (1 - Math.max(0, q.closestTarget - scene.target.radius) / Math.hypot(scene.start.x - scene.target.x, scene.start.y - scene.target.y)) * 100));
-    text = `정거장 최근접 ${n(q.closestTarget)} / ${scene.target.radius} · 속도 ${n(q.speed)} / ${scene.target.maxSpeed}`;
-    if (m.type === "flyby") text += ` · 근접 통과 ${q.flyby ? "완료" : q.near ? "탈출 대기" : "미완료"} (${n(q.turn)}°)`;
+    text = `정거장까지 가장 가까운 거리 ${n(q.closestTarget)} / 목표 ${scene.target.radius} · 현재 속도 ${n(q.speed)} / 진입 제한 ${scene.target.maxSpeed}`;
+    if (m.type === "flyby") text += ` · 행성 곁 통과 ${q.flyby ? "완료" : q.near ? "점선 밖으로 나가세요" : "미완료"} (${n(q.turn)}°)`;
   }
   $("mission-progress").value = progress;
   $("metric-status").textContent = text;
@@ -155,7 +162,7 @@ function draw() {
   if (m.type === "flyby") {
     const b = scene.bodies[m.body];
     circle(b.x, b.y, m.near, "#ffd27a", false, 2); circle(b.x, b.y, m.exit, "#ffd27a", true);
-    text("무분사 근접 통과 구역", b.x - 72, b.y - m.exit - 10, "#ffd27a");
+    text("엔진 분사 없이 지나는 구역", b.x - 85, b.y - m.exit - 10, "#ffd27a");
   }
   for (const b of scene.bodies) {
     const gradient = ctx.createRadialGradient(b.x - b.radius * 0.4, b.y - b.radius * 0.4, 1, b.x, b.y, b.radius);
@@ -168,10 +175,10 @@ function draw() {
     const t = scene.target;
     circle(t.x, t.y, t.radius, "#c4fb5c", false, 2); circle(t.x, t.y, t.radius + 7, "#c4fb5c80");
     line([{ x: t.x - 6, y: t.y }, { x: t.x + 6, y: t.y }], "#c4fb5c");
-    text(`배송 · 속도 ≤ ${t.maxSpeed}`, t.x - 65, t.y - t.radius - 18, "#c4fb5c");
+    text(`정거장 · 속도 ≤ ${t.maxSpeed}`, t.x - 65, t.y - t.radius - 18, "#c4fb5c");
   }
   circle(scene.start.x, scene.start.y, 7, "#f1f5f0");
-  text("START", scene.start.x + 13, scene.start.y + 18);
+  text("출발", scene.start.x + 13, scene.start.y + 18);
   for (const trail of trails) line(trail, "#758b9966", true);
   if (phase === "aim" && prediction && $("preview").checked) {
     line(prediction.path, "#73c7e690", true);

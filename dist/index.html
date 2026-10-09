@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta name="description" content="고정 중력원에서 원궤도, 탈출, 배송과 예약 분사를 실험하는 6개 임무." />
+    <meta name="description" content="발사 방향·속도·엔진 분사 시점을 조절해 궤도 유지, 행성 탈출, 정거장 도착에 도전하는 게임." />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'" />
     <title>ORBIT COURIER — 궤도 임무</title>
     <link rel="icon" href="./favicon.svg" />
@@ -19,8 +19,8 @@
       <section class="mission-heading">
         <div>
           <p class="eyebrow" id="sector">임무 1 / 6</p>
-          <h1 id="mission-title">원을 그리는 속도</h1>
-          <p id="mission-copy">목표 궤도를 유지하는 속도를 찾아보세요.</p>
+          <h1 id="mission-title">행성 주위를 한 바퀴 돌기</h1>
+          <p id="mission-copy">탐사선이 아틀라스 주위를 원에 가깝게 한 바퀴 돌도록 발사 방향과 속도를 맞추세요.</p>
         </div>
       </section>
       <div class="flight-layout">
@@ -35,7 +35,7 @@
           </section>
           <div class="viewport">
             <div class="flight-bar"><span id="flight-state">발사 준비</span><span id="telemetry">T+0.00 / 40</span></div>
-            <canvas id="space" width="900" height="560" tabindex="0" aria-label="궤도 실험판. 드래그 또는 방향키로 초기 속도 벡터 조절. Space로 실행 또는 일시정지. 임무 수치는 아래 관측 계기에 표시됩니다."></canvas>
+            <canvas id="space" width="900" height="560" tabindex="0" aria-label="우주 비행 화면. 드래그 또는 방향키로 발사 방향과 속도를 조절합니다. Space로 실행 또는 일시정지. 임무 수치는 아래 관측 계기에 표시됩니다."></canvas>
             <div class="legend"><span>파랑 점선: 예상 궤적</span><span>연두 실선: 실행 궤적</span><span>회색: 이전 비행</span><span>노랑: 분사 / 근접 통과</span></div>
           </div>
           <p id="prediction-copy" class="prediction-copy">예상 궤적은 실행 기록이 아닙니다.</p>
@@ -47,14 +47,16 @@
           </figure>
           <section class="telemetry-panel" aria-label="모형 관측 계기">
             <div><span>속도 |v|</span><strong id="speed-now">—</strong></div>
-            <div><span>중심 반경 r</span><strong id="radius-now">—</strong></div>
-            <div><span>총 비에너지 E</span><strong id="energy-now">—</strong></div>
-            <div><span>중심 기준 이심률 e</span><strong id="ecc-now">—</strong></div>
+            <div><span>행성 중심 거리 r</span><strong id="radius-now">—</strong></div>
+            <div><span>에너지 E</span><strong id="energy-now">—</strong></div>
+            <div><span>궤도 모양 e</span><strong id="ecc-now">—</strong></div>
           </section>
           <p id="burn-state" class="burn-state">예약 분사 없음</p>
           <details class="lab-notes">
-            <summary>모형과 단위</summary>
-            <p>거리·속도·시간은 모형 단위입니다. 고정 중력원 1–3개의 역제곱 중력을 합산합니다. E는 초기 에너지 + 실제 분사 변화량, 이심률은 중심 행성에 대한 순간 이체 근사입니다. 이동 행성의 에너지 전달은 재현하지 않습니다.</p>
+            <summary>수치와 용어</summary>
+            <p>거리·속도·시간은 이 게임의 모형 단위입니다. T+는 비행 시작 후 지난 시간, Δv는 엔진 분사로 바뀌는 속도입니다. 행성 중심 거리 r은 표면이 아닌 중심에서 잰 거리입니다.</p>
+            <p>에너지 E는 질량당 비행 에너지로, 초기값에 실제 분사로 바뀐 에너지를 더한 값입니다. 탈출 임무에서는 E가 0보다 커야 합니다. 궤도 모양 e(이심률)는 0이면 원형이며 값이 커질수록 원형에서 벗어납니다. 여러 행성이 있을 때는 중심 행성을 기준으로 계산한 근사값입니다.</p>
+            <p>고정된 행성 1–3개의 중력을 계산합니다. 움직이는 행성에서 얻는 가속 효과는 구현하지 않습니다.</p>
           </details>
         </section>
         <aside class="control-deck" aria-label="비행 계획">
@@ -64,10 +66,10 @@
           <label for="power">초기 속도 <output id="power-output">85</output></label>
           <input id="power" type="range" min="20" max="320" step="0.5" value="85" />
           <p class="eyebrow burn-heading">예약 분사</p>
-          <p class="control-help">1회 분사 · + 가속 / − 감속 / 0 없음</p>
-          <label for="burn">분사 Δv <output id="burn-output">0</output></label>
+          <p class="control-help">비행 중 한 번 분사 · 양수는 가속, 음수는 감속, 0이면 분사하지 않음</p>
+          <label for="burn">속도 변화 Δv <output id="burn-output">0</output></label>
           <input id="burn" type="range" min="-80" max="80" step="0.5" value="0" />
-          <label for="burnAt">분사 시점 T+ <output id="burnAt-output">4.00</output></label>
+          <label for="burnAt">출발 후 분사 시점 T+ <output id="burnAt-output">4.00</output></label>
           <input id="burnAt" type="range" min="0" max="20" step="0.05" value="4" />
           <label class="check-row" for="preview"><input id="preview" type="checkbox" checked /> 예상 궤적 표시</label>
           <label for="playback">재생 속도</label>

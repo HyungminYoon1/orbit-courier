@@ -24,12 +24,12 @@ export function flightFeedback(scene, result) {
       const arrivals = result.events.filter((e) => e.type === "arrival");
       const tooFast = arrivals.find((e) => e.speed > scene.target.maxSpeed);
       if (tooFast) diagnosis += ` 진입 속도 ${round(tooFast.speed)} > ${scene.target.maxSpeed} · T+${round(tooFast.t, 2)}`;
-      else if (arrivals.length && m.type === "flyby" && !q.flyby) diagnosis += " 정거장 진입 전 무분사 통과 인증 필요.";
+      else if (arrivals.length && m.type === "flyby" && !q.flyby) diagnosis += " 정거장에 도착하기 전에 엔진 분사 없이 행성 곁을 지나 방향을 바꿔야 합니다.";
       else if (!arrivals.length) diagnosis += ` 최근접 표본 거리 ${round(Math.min(...points.map((p) => p.observed)))} / ${target}`;
     }
   }
-  return { points, target, band, label: delivery ? "정거장 중심 거리" : "중심 반경",
-    condition: m.type === "orbit" ? "허용 반경" : m.type === "escape" ? "탈출 경계 이상" : "배송 반경 이하",
+  return { points, target, band, label: delivery ? "정거장 중심까지의 거리" : "행성 중심까지의 거리",
+    condition: m.type === "orbit" ? "궤도 허용 거리" : m.type === "escape" ? "탈출 경계 이상" : "도착 구역 반경 이하",
     diagnosis, endError: points.at(-1)?.error ?? null,
     maxAbsoluteError: points.length ? Math.max(...points.map((p) => Math.abs(p.error))) : null };
 }
