@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta name="description" content="원궤도, 탈출, 다중 중력원 배송과 예약 분사를 실험하는 궤도 임무 연구소." />
+    <meta name="description" content="고정 중력원에서 원궤도, 탈출, 배송과 예약 분사를 실험하는 6개 임무." />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'" />
-    <title>ORBIT COURIER — 궤도 임무 연구소</title>
+    <title>ORBIT COURIER — 궤도 임무</title>
     <link rel="icon" href="./favicon.svg" />
     <link rel="stylesheet" href="./styles.css" />
     <script type="module" src="./src/app.js"></script>
@@ -13,25 +13,23 @@
   <body>
     <header>
       <a class="brand" href="./">ORBIT<br /><span>COURIER</span></a>
-      <p>ORBITAL MISSION LAB / 02</p>
       <a href="https://github.com/HyungminYoon1/orbit-courier">소스 코드</a>
     </header>
     <main>
       <section class="mission-heading">
         <div>
-          <p class="eyebrow" id="sector">MISSION 01 / 06</p>
+          <p class="eyebrow" id="sector">임무 1 / 6</p>
           <h1 id="mission-title">원을 그리는 속도</h1>
           <p id="mission-copy">목표 궤도를 유지하는 속도를 찾아보세요.</p>
         </div>
-        <div class="lab-stamp">PLAN<br /><strong>FLY</strong><br />OBSERVE / REPEAT</div>
       </section>
       <div class="flight-layout">
         <section class="lab-workspace" aria-label="임무와 관측">
           <section class="objective-panel" aria-labelledby="mission-type">
-            <p class="eyebrow" id="mission-type">ORBIT / 궤도 유지</p>
-            <h2>이번 실험의 성공 조건</h2>
+            <p class="eyebrow" id="mission-type">궤도 유지</p>
+            <h2>성공 조건</h2>
             <ul id="objectives"></ul>
-            <label for="mission-progress">임무 진행 <span>조건을 모두 충족해야 성공</span></label>
+            <label for="mission-progress">임무 진행</label>
             <progress id="mission-progress" max="100" value="0"></progress>
             <p id="metric-status">발사 준비</p>
           </section>
@@ -42,6 +40,11 @@
           </div>
           <p id="prediction-copy" class="prediction-copy">예상 궤적은 실행 기록이 아닙니다.</p>
           <div id="outcome" class="outcome" role="status" hidden></div>
+          <figure id="result-chart" class="result-chart" hidden>
+            <h2>실행 거리 · 오차</h2>
+            <svg id="radius-chart" viewBox="0 0 480 344" role="img" aria-labelledby="chart-caption"></svg>
+            <figcaption id="chart-caption"></figcaption>
+          </figure>
           <section class="telemetry-panel" aria-label="모형 관측 계기">
             <div><span>속도 |v|</span><strong id="speed-now">—</strong></div>
             <div><span>중심 반경 r</span><strong id="radius-now">—</strong></div>
@@ -49,54 +52,56 @@
             <div><span>중심 기준 이심률 e</span><strong id="ecc-now">—</strong></div>
           </section>
           <p id="burn-state" class="burn-state">예약 분사 없음</p>
-          <details class="lab-notes" open>
-            <summary>어떻게 실험하나요?</summary>
-            <ol>
-              <li>성공 조건을 읽고 초기 속도와 방향을 정하세요. 각도 0°는 오른쪽, −90°는 위쪽입니다.</li>
-              <li>예상 궤적을 확인하거나 끄고 도전하세요. 필요하면 분사 시점과 Δv를 예약합니다.</li>
-              <li>임무 실행 → 계기 관찰 → 다시 조준. 한 변수만 바꾸면 이전 3회 궤적과 비교하기 쉽습니다.</li>
-            </ol>
-            <p>속도·거리·시간은 모두 모형 단위이며 실제 측정값이 아닙니다. 고정 행성 1–3개의 역제곱 중력을 합산합니다. E는 초기 에너지와 분사 변화량의 합, 이심률은 중심 행성 기준의 순간 추정입니다. 실제 우주 임무나 장기 궤도 안정성을 보장하지 않습니다.</p>
+          <details class="lab-notes">
+            <summary>모형과 단위</summary>
+            <p>거리·속도·시간은 모형 단위입니다. 고정 중력원 1–3개의 역제곱 중력을 합산합니다. E는 초기 에너지 + 실제 분사 변화량, 이심률은 중심 행성에 대한 순간 이체 근사입니다. 이동 행성의 에너지 전달은 재현하지 않습니다.</p>
           </details>
         </section>
         <aside class="control-deck" aria-label="비행 계획">
-          <p class="eyebrow">01 / INITIAL VELOCITY</p>
+          <p class="eyebrow">초기 속도</p>
           <label for="angle">발사 각도 <output id="angle-output">−75°</output></label>
           <input id="angle" type="range" min="-180" max="180" step="0.5" value="-75" />
           <label for="power">초기 속도 <output id="power-output">85</output></label>
           <input id="power" type="range" min="20" max="320" step="0.5" value="85" />
-          <p class="eyebrow burn-heading">02 / SCHEDULED MANEUVER</p>
-          <p class="control-help">Δv +는 진행 방향 가속, −는 감속. 0이면 분사하지 않습니다. 비행 중 1회 실행됩니다.</p>
+          <p class="eyebrow burn-heading">예약 분사</p>
+          <p class="control-help">1회 분사 · + 가속 / − 감속 / 0 없음</p>
           <label for="burn">분사 Δv <output id="burn-output">0</output></label>
           <input id="burn" type="range" min="-80" max="80" step="0.5" value="0" />
           <label for="burnAt">분사 시점 T+ <output id="burnAt-output">4.00</output></label>
           <input id="burnAt" type="range" min="0" max="20" step="0.05" value="4" />
           <label class="check-row" for="preview"><input id="preview" type="checkbox" checked /> 예상 궤적 표시</label>
           <label for="playback">재생 속도</label>
-          <select id="playback"><option value="1">1× · 자세히 관찰</option><option value="2" selected>2× · 기본</option><option value="4">4× · 빠르게</option></select>
+          <select id="playback"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option></select>
           <button id="launch" class="launch">임무 실행</button>
           <div class="secondary"><button id="retry">다시 조준</button><button id="reset">임무 초기화</button></div>
           <div class="secondary hint-row"><button id="hint">원리 힌트</button><button id="reference">참고 계획 적용</button></div>
-          <p id="status" role="status">초기 조건을 바꾸고 결과를 관찰하세요.</p>
-          <div class="instrument"><span>ATTEMPTS</span><strong id="attempts">00</strong><span>BEST / 이 기기</span><strong id="best">—</strong></div>
+          <p id="status" role="status">발사 준비</p>
+          <div class="instrument"><span>시도</span><strong id="attempts">00</strong><span>이 코드 최고 · 기기 내</span><strong id="best">—</strong></div>
           <button id="next" class="next" hidden>다음 임무 →</button>
           <label for="stage">임무 선택</label><select id="stage"></select>
           <p id="progress-copy" class="control-help">성공하면 다음 임무가 열립니다.</p>
-          <label for="seed">실험 코드</label>
+          <label for="seed">임무 코드</label>
           <div class="seed-row"><input id="seed" maxlength="40" spellcheck="false" /><button id="apply-seed">적용</button></div>
-          <button id="new-route">새 실험 코드</button>
+          <button id="new-route">새 코드</button>
+          <section class="history" aria-label="저장한 임무">
+            <p id="resume-copy"></p>
+            <button id="continue">저장한 임무 이어하기</button>
+            <label for="recent">최근 코드 · 최대 8개</label>
+            <select id="recent"></select>
+            <button id="open-recent">선택한 코드 열기</button>
+          </section>
           <details>
             <summary>조작·점수·기기 기록</summary>
-            <p>캔버스 방향키: 각도·속도 조절. Space: 실행·일시정지. 다른 화면으로 이동하면 자동 정지합니다. 임무 초기화는 현재 시도와 궤적을 비웁니다.</p>
+            <p>0° 오른쪽, −90° 위쪽. 드래그·방향키로 조준, Space로 실행·정지. 화면 이탈 시 자동 정지. 임무 초기화는 설정·시도·비교 궤적을 초기화합니다.</p>
             <p>같은 버전·코드는 같은 배치입니다. 코드는 설계된 임무를 상하 반전·좌우 이동한 6개 배치 중 하나를 선택합니다.</p>
             <p>성공 점수: 1,500 − (초기 속도 + 실행 분사 |Δv|)×2 − 모형 시간×6 − 추가 시도×45 − 힌트 120. 최저 50점. 참고 계획도 힌트에 포함됩니다.</p>
-            <p>해금과 코드·임무별 최고 기록 최대 100개만 이 브라우저에 저장합니다. 구버전 점수는 새 규칙과 합치지 않습니다. 계정·클라우드·전체 랭킹은 없습니다.</p>
+            <p>이 브라우저에 최근 코드 8개·설정·시도·힌트 여부, 해금, 최고 점수 100개와 독립 완료 임무를 저장합니다. 비행 궤적은 저장하지 않습니다. 갤러리에는 힌트 없이 완료한 임무 수·전체 수·갱신 시각만 공유합니다. 구버전 점수는 합치지 않습니다.</p>
             <button id="clear">구버전 포함 내 기록 삭제</button>
           </details>
         </aside>
       </div>
       <p id="notice" role="status"></p>
     </main>
-    <footer><span>SMALL BURNS. DIFFERENT ORBITS.</span><span>ORBIT COURIER / LOCAL MISSION LAB</span></footer>
+    <footer>ORBIT COURIER</footer>
   </body>
 </html>

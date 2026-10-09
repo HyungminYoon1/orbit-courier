@@ -467,3 +467,25 @@ progress::-moz-progress-bar { background: var(--acid); }
   .legend span:last-child { display: inline; }
   .mission-heading p:last-child { font-size: 0.875rem; }
 }
+
+.history { border-top: 1px solid #31434c; margin-top: 1rem; padding-top: 0.5rem; }
+.history p { font-size: 0.8rem; color: var(--muted); line-height: 1.6; }
+.history button { width: 100%; margin-top: 0.6rem; font-size: 0.875rem; }
+.result-chart { margin: 0 0 1rem; padding: 0.8rem; border: 1px solid #31434c; background: #0e202b; }
+.result-chart h2 { font-size: 1rem; margin: 0 0 0.6rem; }
+.result-chart svg { display: block; width: 100%; max-height: 400px; }
+.result-chart figcaption { font-size: 0.8rem; line-height: 1.7; color: #b1c2cd; }
+.chart-label, .chart-tick { fill: #c4d6e0; font: 14px "Malgun Gothic", sans-serif; }
+.chart-tick { font-family: Consolas, monospace; }
+.chart-grid { stroke: #31434c; stroke-width: 1; }
+.chart-target { stroke: #73c7e6; stroke-width: 1.5; stroke-dasharray: 5 5; }
+.chart-observed { fill: none; stroke: #c4fb5c; stroke-width: 2; stroke-linejoin: round; }
+.chart-band { fill: #73c7e626; }
+.chart-burn { stroke: #ffd27a; stroke-width: 1; stroke-dasharray: 3 4; }
+@media (max-width: 520px) {
+  input[type="range"] { min-height: 44px; }
+  .history { min-width: 0; }
+  .result-chart { padding: 0.5rem; }
+  .secondary { flex-wrap: wrap; }
+  .secondary button { min-width: 110px; }
+}

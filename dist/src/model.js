@@ -28,7 +28,7 @@ export function makeSector(stage, seed) {
     scene.mission = { type: "escape", radius: 240 };
     scene.defaults = { angle: -90, power: 130, burn: 0, burnAt: 2 };
     scene.reference = { angle: -90, power: 170, burn: 0, burnAt: 2 };
-    scene.lesson = "멀리 갔다고 탈출한 것은 아닙니다. 총 비에너지가 양수이고 바깥으로 이동해야 합니다.";
+    scene.lesson = "탈출 경계에서 총 비에너지가 양수이고 바깥으로 이동해야 합니다.";
     scene.hint = "시작점 탈출 속도 √(2μ/r) ≈ 155. 초기 속도 170으로 비교해 보세요.";
   }
   if (stage === 3 || stage === 5) {
@@ -38,14 +38,14 @@ export function makeSector(stage, seed) {
     scene.mission = { type: "delivery" };
     scene.defaults = { angle: -30, power: 220, burn: 0, burnAt: 2 };
     scene.reference = { angle: -47, power: 100, burn: 0, burnAt: 2 };
-    scene.lesson = "정거장 원 안에 들어와도 속도가 제한을 넘으면 배송할 수 없습니다. 중력 가속과 감속 분사를 함께 고려하세요.";
+    scene.lesson = "중력 가속을 고려해 제한 속도 이하로 도착하세요. 감속 분사를 예약할 수 있습니다.";
     scene.hint = "먼저 예상 궤적으로 정거장에 접근한 뒤 도착 속도를 확인하세요. 역방향 분사는 현재 속도를 줄입니다.";
     if (stage === 5) {
       scene.bodies.push(body(220, 100, 100000, 22, "이오", "#a78be3"));
       scene.mission = { type: "flyby", body: 0, near: 120, exit: 140, minTurn: 20 };
       scene.target = { x: 780, y: 210, radius: 30, maxSpeed: 250 };
       scene.reference = { angle: -42, power: 100, burn: 0, burnAt: 2 };
-      scene.lesson = "아틀라스의 근접 통과 구역으로 들어갔다가 나와 방향을 20° 이상 바꾸고 배송하세요. 고정 행성 모델이므로 실제 이동 행성의 에너지 획득은 재현하지 않습니다.";
+      scene.lesson = "아틀라스 근접 통과로 방향을 바꾼 뒤 정거장에 도착하세요.";
       scene.hint = "노란 근접 원을 통과한 뒤 바깥 점선까지 무분사로 빠져나와야 인증됩니다. 방향 전환과 배송은 모두 필요합니다.";
     }
   }
@@ -140,7 +140,7 @@ export function simulate(scene, angle, power, options = {}) {
   const rad = angle * Math.PI / 180;
   let p = { ...scene.start, vx: Math.cos(rad) * power, vy: Math.sin(rad) * power, t: 0 };
   const path = [], events = [];
-  let status = "timeout", reason = "제한 시간 40 안에 임무 조건을 완성하지 못했습니다.";
+  let status = "timeout", reason = "시간 40 내 조건 미충족.";
   let orbitAngle = 0, orbitActive = false, flybyEntry = null, near = false, flyby = false, turn = 0;
   let minRadius = Math.hypot(p.x - scene.bodies[0].x, p.y - scene.bodies[0].y);
   let closestTarget = scene.target ? Math.hypot(p.x - scene.target.x, p.y - scene.target.y) : null;
@@ -170,7 +170,7 @@ export function simulate(scene, angle, power, options = {}) {
     if (hits.length) {
       const fraction = Math.min(...hits);
       p = { ...p, x: p.x + (next.x - p.x) * fraction, y: p.y + (next.y - p.y) * fraction, t: p.t + DT * fraction };
-      status = "collision"; reason = "행성 표면과 충돌했습니다. 분사 시점과 최근접 거리를 확인하세요.";
+      status = "collision"; reason = "행성 충돌.";
       path.push(sample()); break;
     }
     const aa = acceleration(scene, next);
@@ -209,15 +209,20 @@ export function simulate(scene, angle, power, options = {}) {
     if (scene.target) {
       closestTarget = Math.min(closestTarget, Math.hypot(p.x - scene.target.x, p.y - scene.target.y));
       if (segmentHit(previous, p, scene.target) !== null) {
+        if (step === 1 || Math.hypot(previous.x - scene.target.x, previous.y - scene.target.y) > scene.target.radius) {
+          const contact = segmentHit(previous, p, scene.target);
+          events.push({ type: "arrival", t: previous.t + contact * DT,
+            speed: Math.max(metrics.speed, Math.hypot(previous.vx, previous.vy)), flyby });
+        }
         if (Math.max(metrics.speed, Math.hypot(previous.vx, previous.vy)) <= scene.target.maxSpeed && (m.type !== "flyby" || flyby)) {
           status = "success"; reason = "정거장 배송 구역에 제한 속도 이하로 진입했습니다.";
-        } else if (metrics.speed > scene.target.maxSpeed) reason = "정거장을 통과했지만 도착 속도가 제한을 넘었습니다. 역방향 분사를 조정하세요.";
-        else reason = "정거장에 접근했지만 근접 통과와 방향 전환 조건이 미완료입니다.";
+        } else if (Math.max(metrics.speed, Math.hypot(previous.vx, previous.vy)) > scene.target.maxSpeed) reason = "정거장 진입 속도 초과.";
+        else reason = "무분사 근접 통과 미완료.";
       }
     }
     if (status !== "success" && (p.x < -30 || p.x > 930 || p.y < -30 || p.y > 590)) {
       status = "lost";
-      if (reason.startsWith("제한 시간")) reason = "비행 영역을 벗어났습니다. 화면 이탈만으로 탈출 성공이 되지는 않습니다.";
+      if (reason.startsWith("시간 40")) reason = "비행 영역 이탈.";
     }
     if (step % 2 === 0 || status !== "timeout") path.push(sample());
     if (status !== "timeout") break;

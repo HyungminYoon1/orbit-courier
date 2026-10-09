@@ -38,10 +38,10 @@ export function cleanSeed(s) {
     throw Error("도전 코드는 영문·숫자·하이픈 1–40자로 입력하세요.");
   return s.trim();
 }
-export function loadLocal(key, fallback) {
+export function loadLocal(key, fallback, limit = 65536) {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
+    return raw && raw.length <= limit ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
   }
@@ -66,9 +66,7 @@ export function tool(name, title, schema, execute) {
           name,
           title,
           inputSchema: schema,
-          description:
-            title +
-            " — 현재 화면의 조작과 같은 동작입니다. 외부 요청을 보내지 않습니다.",
+          description: title,
           annotations: { readOnlyHint: false, untrustedContentHint: false },
           execute,
         },

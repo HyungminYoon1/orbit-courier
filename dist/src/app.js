@@ -1,25 +1,37 @@
 import { $, freshSeed, cleanSeed, loadLocal, saveLocal, announce, rng, tool } from "./core.js";
 import { makeSector, simulate, flightScore, TITLES, LIMITS } from "./model.js";
+import { normalizeRecord, rememberMission, recordCompletion } from "./records.js";
+import { flightFeedback } from "./feedback.js";
+import { publishProgress, clearProgress } from "./progress.js";
 
 const KEY = "orbit-courier-v2";
-const old = loadLocal(KEY, {});
-let record = { best: {}, unlocked: Number.isInteger(old?.unlocked) ? Math.max(1, Math.min(TITLES.length, old.unlocked)) : 1 };
-if (old?.best && typeof old.best === "object") {
-  for (const [key, value] of Object.entries(old.best).slice(-100)) {
-    if (/^[A-Za-z0-9-]{1,40}-[1-6]$/.test(key) && Number.isFinite(value) && value >= 0 && value <= 1500) record.best[key] = value;
-  }
-}
-let seed = freshSeed(), stage = 1, scene, phase = "aim", attempts = 0, hinted = false;
+let record = normalizeRecord(loadLocal(KEY, {}));
+const restored = record.recent[0];
+let seed = restored?.seed ?? freshSeed(), stage = restored?.stage ?? 1, scene, phase = "aim", attempts = 0, hinted = false;
 let trails = [], flight = null, prediction = null, cursor = 0, playTime = 0, frame = 0, last = 0, dragging = false;
 const canvas = $("space"), ctx = canvas.getContext("2d");
 let stars = [];
 const value = (id) => Number($(id).value);
 const plan = () => ({ angle: value("angle"), power: value("power"), burn: value("burn"), burnAt: value("burnAt") });
 const n = (number, digits = 1) => Number.isFinite(number) ? number.toFixed(digits) : "—";
-const labels = { orbit: "ORBIT / 궤도 유지", escape: "ESCAPE / 탈출", delivery: "DELIVERY / 속도 제한 배송", flyby: "FLYBY / 근접 통과 배송" };
+const labels = { orbit: "궤도 유지", escape: "탈출", delivery: "속도 제한 배송", flyby: "근접 통과 배송" };
 
 function save() {
-  if (!saveLocal(KEY, record)) announce("현재 세션에서는 진행되지만 이 브라우저에 기록을 저장할 수 없습니다.");
+  const saved = saveLocal(KEY, record);
+  if (!saved) announce("저장 불가 · 현재 세션에서만 유지됩니다.");
+  return saved;
+}
+function checkpoint() {
+  record = rememberMission(record, { seed, stage, attempts, hinted, plan: plan() });
+  recentControls();
+  return save();
+}
+function recentControls() {
+  $("recent").replaceChildren(...record.recent.map((r) => Object.assign(document.createElement("option"), {
+    value: r.seed, textContent: `${r.seed} · 임무 ${r.stage}`,
+  })));
+  $("recent").disabled = $("open-recent").disabled = $("continue").disabled = !record.recent.length;
+  $("resume-copy").textContent = record.recent.length ? `마지막 코드 ${record.recent[0].seed} · 임무 ${record.recent[0].stage}` : "저장한 코드 없음";
 }
 function setPlan(p) {
   for (const id of ["angle", "power", "burn", "burnAt"]) {
@@ -44,20 +56,21 @@ function requirements() {
     `중심 행성 기준 이심률 e ≤ ${m.maxEccentricity} (원에 가까울수록 0)`,
     `두 조건을 연속 ${m.turns}바퀴 유지 · 벗어나면 진행률 초기화`,
   ];
-  if (m.type === "escape") return [`중심 반경 ${m.radius} 이상의 탈출 경계 통과`, "총 비에너지 E > 0 · 바깥 방향 속도 > 0", "화면 이탈만으로는 성공하지 않음"];
+  if (m.type === "escape") return [`중심 반경 ${m.radius} 이상의 탈출 경계 통과`, "총 비에너지 E > 0 · 바깥 방향 속도 > 0"];
   const result = [`정거장 중심에서 ${scene.target.radius} 이내로 진입`, `진입 속도 ≤ ${scene.target.maxSpeed} · 충돌 없이 도착`];
   if (m.type === "flyby") result.unshift(`아틀라스 반경 ${m.near} 이내 → ${m.exit} 밖 · 무분사 방향 전환 ≥ ${m.minTurn}°`);
   return result;
 }
-function sector() {
+function sector(resume, persist = true) {
   cancelAnimationFrame(frame);
   dragging = false; phase = "aim"; attempts = 0; hinted = false;
+  if (resume) { seed = resume.seed; stage = resume.stage; attempts = resume.attempts; hinted = resume.hinted; }
   trails = []; flight = null; prediction = null; cursor = 0; playTime = 0;
   scene = makeSector(stage, seed);
-  setPlan(scene.defaults);
+  setPlan(resume?.plan ?? scene.defaults);
   const random = rng(seed + "stars");
   stars = Array.from({ length: 100 }, () => ({ x: random() * 900, y: random() * 560, size: random() * 1.4 + 0.4 }));
-  $("sector").textContent = `MISSION ${String(stage).padStart(2, "0")} / ${TITLES.length} · ${scene.variant}`;
+  $("sector").textContent = `임무 ${stage} / ${TITLES.length} · ${scene.variant}`;
   $("mission-title").textContent = scene.title;
   $("mission-copy").textContent = scene.lesson;
   $("mission-type").textContent = labels[scene.mission.type];
@@ -67,13 +80,15 @@ function sector() {
   })));
   $("stage").value = String(stage);
   $("seed").value = seed;
-  $("attempts").textContent = "00";
+  $("attempts").textContent = String(attempts).padStart(2, "0");
   $("best").textContent = record.best[seed + "-" + stage] || "—";
-  $("progress-copy").textContent = `${record.unlocked} / ${TITLES.length} 임무 열림 · 성공하면 다음 임무 해금`;
+  $("progress-copy").textContent = `${record.unlocked} / ${TITLES.length} 임무 열림`;
   $("outcome").hidden = $("next").hidden = true;
+  $("result-chart").hidden = true;
   $("flight-state").textContent = "발사 준비";
-  $("status").textContent = "한 번에 한 변수만 바꿔 보세요. 예상 궤적은 계획이며 실행 기록에 포함되지 않습니다.";
+  $("status").textContent = hinted ? "힌트 사용 · 성공 점수 −120" : "발사 준비";
   updatePlan();
+  if (persist) checkpoint(); else recentControls();
 }
 function updatePlan() {
   controls();
@@ -172,7 +187,7 @@ function draw() {
     for (let i = 60; i < visible.length; i += 60) {
       const p = visible[i]; circle(p.x, p.y, 2, "#edf2ec");
     }
-    for (const e of flight.events.filter((e) => e.t <= flight.path[cursor].t)) {
+    for (const e of flight.events.filter((e) => ["burn", "flyby"].includes(e.type) && e.t <= flight.path[cursor].t)) {
       circle(e.x, e.y, 8, "#ffd27a", false, 2); text(e.type === "burn" ? "Δv 분사" : "근접 통과 ✓", e.x + 12, e.y - 8, "#ffd27a");
     }
   }
@@ -184,19 +199,58 @@ function draw() {
   ctx.save(); ctx.translate(point.x, point.y); ctx.rotate(Math.atan2(point.vy, point.vx));
   ctx.fillStyle = "#edf2ec"; ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-8, -6); ctx.lineTo(-5, 0); ctx.lineTo(-8, 6); ctx.closePath(); ctx.fill(); ctx.restore();
 }
+function resultChart(data) {
+  const svg = $("radius-chart");
+  svg.replaceChildren();
+  const add = (tag, attributes, label) => {
+    const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [key, value] of Object.entries(attributes)) el.setAttribute(key, String(value));
+    if (label !== undefined) el.textContent = label;
+    svg.append(el); return el;
+  };
+  const duration = Math.max(flight.time, 0.01);
+  const x = (t) => 58 + t / duration * 396;
+  const panel = (top, key, label, values, target, band) => {
+    const low = Math.min(...values, target, ...(band ?? [])), high = Math.max(...values, target, ...(band ?? []));
+    const pad = Math.max(1, (high - low) * 0.1), min = low - pad, max = high + pad;
+    const y = (v) => top + 100 - (v - min) / (max - min) * 100;
+    add("text", { x: 58, y: top - 12, class: "chart-label" }, label);
+    if (band) add("rect", { x: 58, y: y(band[1]), width: 396, height: y(band[0]) - y(band[1]), class: "chart-band" });
+    for (const value of [min, (min + max) / 2, max]) {
+      add("line", { x1: 58, x2: 454, y1: y(value), y2: y(value), class: "chart-grid" });
+      add("text", { x: 50, y: y(value) + 4, "text-anchor": "end", class: "chart-tick" }, n(value, 0));
+    }
+    add("line", { x1: 58, x2: 454, y1: y(target), y2: y(target), class: "chart-target" });
+    add("polyline", { points: data.points.map((p) => `${x(p.t)},${y(p[key])}`).join(" "), class: "chart-observed" });
+    for (const event of flight.events.filter((e) => e.type === "burn")) {
+      add("line", { x1: x(event.t), x2: x(event.t), y1: top, y2: top + 100, class: "chart-burn" });
+    }
+    for (const t of [0, duration / 2, duration]) add("text", { x: x(t), y: top + 119, "text-anchor": "middle", class: "chart-tick" }, n(t, 2));
+  };
+  panel(32, "observed", `${data.label} · ${data.condition} ${n(data.target, 0)}`, data.points.map((p) => p.observed), data.target, data.band);
+  panel(190, "error", "오차 = 관측 거리 − 목표 거리", data.points.map((p) => p.error), 0,
+    data.band ? data.band.map((v) => v - data.target) : null);
+  add("text", { x: 454, y: 335, "text-anchor": "end", class: "chart-tick" }, "모형 시간 T+");
+  $("chart-caption").textContent = `실행 표본 · 종료 오차 ${n(data.endError)} · 최대 |오차| ${n(data.maxAbsoluteError)}. 점선: 목표 · 음영: 허용 반경 · 노랑: 분사.`;
+  svg.setAttribute("aria-label", `${data.label}와 오차의 시간 그래프. ${$("chart-caption").textContent}`);
+  $("result-chart").hidden = false;
+}
 function end() {
   phase = flight.status === "success" ? "success" : "failure";
-  $("flight-state").textContent = phase === "success" ? "임무 성공" : "실험 종료 · 재설정 가능";
+  $("flight-state").textContent = phase === "success" ? "임무 성공" : "임무 실패";
   const score = flightScore(flight, value("power"), attempts, hinted);
-  const heading = Object.assign(document.createElement("h2"), { textContent: phase === "success" ? `MISSION COMPLETE / ${score} PT` : "조건 미충족 · 다음 실험을 계획하세요" });
-  const detail = Object.assign(document.createElement("p"), { textContent: `${flight.reason} T+${n(flight.time, 2)} · 속도 ${n(flight.metrics.speed)} · E ${n(flight.metrics.conservedEnergy, 0)}` });
+  const feedback = flightFeedback(scene, flight);
+  const heading = Object.assign(document.createElement("h2"), { textContent: phase === "success" ? `임무 성공 · ${score}점` : "조건 미충족" });
+  const detail = Object.assign(document.createElement("p"), { textContent: feedback.diagnosis });
   $("outcome").replaceChildren(heading, detail); $("outcome").hidden = false;
+  resultChart(feedback);
   if (phase === "success") {
     const key = seed + "-" + stage;
-    record.best[key] = Math.max(record.best[key] || 0, score);
-    while (Object.keys(record.best).length > 100) delete record.best[Object.keys(record.best)[0]];
-    record.unlocked = Math.max(record.unlocked, Math.min(TITLES.length, stage + 1));
-    save();
+    record = recordCompletion(record, seed, stage, flight, score, hinted);
+    if (checkpoint() && !hinted) {
+      try { if (!publishProgress(localStorage, record.completed.length, TITLES.length)) announce("갤러리 완료 수 저장 불가."); }
+      catch { announce("갤러리 완료 수 저장 불가."); }
+    }
     $("best").textContent = record.best[key];
     $("next").hidden = stage === TITLES.length;
     for (const option of $("stage").options) {
@@ -204,8 +258,8 @@ function end() {
       if (!option.disabled) option.textContent = `${option.value}. ${TITLES[Number(option.value) - 1]}`;
     }
     $("progress-copy").textContent = `${record.unlocked} / ${TITLES.length} 임무 열림`;
-    $("status").textContent = stage === TITLES.length ? "6개 임무를 완료했습니다. 변수 하나를 바꾸며 성공 조건의 경계를 비교해 보세요." : "새 임무가 열렸습니다. 다시 조준하면 최근 3회 궤적을 비교할 수 있습니다.";
-  } else $("status").textContent = flight.reason;
+    $("status").textContent = stage === TITLES.length ? "전체 임무 해금" : "다음 임무 열림";
+  } else $("status").textContent = "다시 조준하여 설정을 바꾸세요.";
   controls(); draw();
 }
 function animate(now) {
@@ -225,11 +279,12 @@ function launch() {
     phase = "flying"; last = 0; $("flight-state").textContent = "비행 중"; controls(); frame = requestAnimationFrame(animate); return;
   }
   if (phase !== "aim") return;
-  attempts++; $("attempts").textContent = String(attempts).padStart(2, "0");
+  attempts = Math.min(1000000, attempts + 1); $("attempts").textContent = String(attempts).padStart(2, "0");
   const p = plan(); flight = simulate(scene, p.angle, p.power, p);
+  checkpoint();
   cursor = 0; playTime = 0; last = 0; phase = "flying";
-  $("outcome").hidden = true; $("flight-state").textContent = "비행 중";
-  $("prediction-copy").textContent = "실행 궤적 · 점은 모형 시간 1 간격 · 노란 원은 실제 분사/근접 통과";
+  $("outcome").hidden = $("result-chart").hidden = true; $("flight-state").textContent = "비행 중";
+  $("prediction-copy").textContent = "실행 궤적 · 점 간격: 모형 시간 1";
   controls(); frame = requestAnimationFrame(animate);
 }
 function retry() {
@@ -237,34 +292,49 @@ function retry() {
   if (flight) trails.push(flight.path.slice(0, cursor + 1));
   trails = trails.slice(-3); phase = "aim"; flight = null; cursor = 0; playTime = 0;
   $("outcome").hidden = $("next").hidden = true; $("flight-state").textContent = "발사 준비";
-  $("status").textContent = "직전 비행은 회색 점선입니다. 설정을 바꿔 비교하세요.";
+  $("result-chart").hidden = true;
+  $("status").textContent = "직전 비행: 회색 점선";
   updatePlan();
 }
-for (const id of ["angle", "power", "burn", "burnAt", "preview"]) $(id).oninput = updatePlan;
+for (const id of ["angle", "power", "burn", "burnAt"]) $(id).oninput = () => { updatePlan(); checkpoint(); };
+$("preview").oninput = updatePlan;
 $("launch").onclick = launch; $("retry").onclick = retry;
-$("reset").onclick = sector;
+$("reset").onclick = () => sector();
 $("hint").onclick = () => {
   if (phase !== "aim") return;
   hinted = true; $("status").textContent = scene.hint + " · 이번 임무 힌트 감점 −120.";
+  checkpoint();
 };
 $("reference").onclick = () => {
   if (phase !== "aim") return;
   hinted = true; setPlan(scene.reference); updatePlan();
-  $("status").textContent = "참고 계획을 적용했습니다. 실행해서 계기를 관찰한 뒤 변수 하나를 바꿔 비교하세요. 성공 점수 −120.";
+  $("status").textContent = "참고 계획 적용 · 성공 점수 −120";
+  checkpoint();
 };
 $("next").onclick = () => { if (phase === "success" && stage < TITLES.length) { stage++; sector(); } };
 $("stage").onchange = () => {
   const selected = value("stage");
   if (Number.isInteger(selected) && selected >= 1 && selected <= record.unlocked) { stage = selected; sector(); }
 };
-$("apply-seed").onclick = () => { try { seed = cleanSeed($("seed").value); stage = 1; sector(); } catch (e) { announce(e.message); } };
+function openCode(nextSeed) {
+  seed = nextSeed;
+  const previous = record.recent.find((r) => r.seed === seed);
+  stage = previous?.stage ?? 1; sector(previous);
+}
+$("apply-seed").onclick = () => { try { openCode(cleanSeed($("seed").value)); } catch (e) { announce(e.message); } };
 $("new-route").onclick = () => { seed = freshSeed(); stage = 1; sector(); };
+$("continue").onclick = () => { if (record.recent[0]) sector(record.recent[0]); };
+$("open-recent").onclick = () => { const selected = record.recent.find((r) => r.seed === $("recent").value); if (selected) sector(selected); };
 $("clear").onclick = () => {
   if (!confirm("이 브라우저의 구버전·현재 임무 기록과 해금을 모두 삭제할까요?")) return;
-  record = { best: {}, unlocked: 1 };
-  try { localStorage.removeItem(KEY); localStorage.removeItem("orbit-courier-v1"); announce("이 기기의 임무 기록을 삭제했습니다."); }
+  record = normalizeRecord({});
+  try {
+    localStorage.removeItem(KEY); localStorage.removeItem("orbit-courier-v1");
+    const cleared = clearProgress(localStorage);
+    announce(cleared ? "임무 기록 삭제 완료." : "임무 기록 삭제 완료 · 갤러리 요약 삭제 불가.");
+  }
   catch { announce("브라우저가 기록 삭제를 차단했습니다. 현재 세션의 기록만 초기화했습니다."); }
-  stage = 1; sector();
+  stage = 1; sector(undefined, false);
 };
 function aimAt(e) {
   if (phase !== "aim") return;
@@ -274,6 +344,7 @@ function aimAt(e) {
   $("angle").value = String(Math.round(Math.atan2(dy, dx) * 180 / Math.PI));
   $("power").value = String(Math.max(20, Math.min(320, Math.round(Math.hypot(dx, dy) / 0.6))));
   updatePlan();
+  checkpoint();
 }
 canvas.onpointerdown = (e) => {
   if (phase !== "aim" || !e.isPrimary || e.button !== 0) return;
@@ -286,7 +357,7 @@ canvas.onkeydown = (e) => {
   else if (phase === "aim" && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
     e.preventDefault();
     const id = ["ArrowLeft", "ArrowRight"].includes(e.key) ? "angle" : "power";
-    $(id).value = String(value(id) + (["ArrowRight", "ArrowUp"].includes(e.key) ? 1 : -1)); updatePlan();
+    $(id).value = String(value(id) + (["ArrowRight", "ArrowUp"].includes(e.key) ? 1 : -1)); updatePlan(); checkpoint();
   }
 };
 const pause = () => { if (phase === "flying") launch(); };
@@ -303,7 +374,7 @@ tool("configure_flight", "항로와 발사·분사 설정", {
   const candidate = { angle: input.angle, power: input.power, burn: input.burn ?? 0, burnAt: input.burnAt ?? 4 };
   for (const [key, [min, max]] of Object.entries(LIMITS)) if (!Number.isFinite(candidate[key]) || candidate[key] < min || candidate[key] > max) throw Error("Invalid flight configuration");
   const nextSeed = cleanSeed(input.seed);
-  seed = nextSeed; stage = input.stage; sector(); setPlan(candidate); updatePlan();
+  seed = nextSeed; stage = input.stage; sector(); setPlan(candidate); updatePlan(); checkpoint();
   return { stage, seed, ...plan(), state: phase };
 });
-sector();
+sector(restored);
