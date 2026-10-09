@@ -409,3 +409,61 @@ footer {
     transition: none !important;
   }
 }
+
+/* Mission lab: objectives and result remain in document flow on small screens. */
+.flight-layout { grid-template-columns: minmax(0, 1fr) 310px; align-items: start; }
+.lab-workspace { min-width: 0; }
+.mission-heading p:last-child { max-width: 850px; line-height: 1.75; font-size: 1rem; }
+.lab-stamp { flex-shrink: 0; padding: 1rem 1.4rem; border: 1px solid #435e66; color: #94b7c3; font: 0.7rem Consolas, monospace; line-height: 1.8; transform: rotate(2deg); }
+.lab-stamp strong { color: var(--acid); font-size: 2rem; }
+.objective-panel { padding: 1.1rem 1.4rem; border: 1px solid #365064; border-bottom: 0; background: linear-gradient(110deg, #132e40, #0e202d); }
+.objective-panel h2 { font-size: 1.1rem; margin: 0.5rem 0; }
+.objective-panel .eyebrow { margin: 0 0 0.5rem; color: #80d7f0; }
+.objective-panel ul { padding-left: 1.2rem; font-size: 0.88rem; line-height: 1.8; margin: 0.7rem 0; }
+.objective-panel label { font-size: 0.75rem; color: #b4c8d4; }
+.objective-panel label span { text-align: right; }
+progress { width: 100%; height: 8px; border: 0; accent-color: var(--acid); background: #233945; }
+progress::-webkit-progress-bar { background: #233945; }
+progress::-webkit-progress-value { background: var(--acid); }
+progress::-moz-progress-bar { background: var(--acid); }
+#metric-status { min-height: 1.4em; font-size: 0.84rem; line-height: 1.6; margin: 0.65rem 0 0; }
+.prediction-copy, .burn-state { color: #a4c4d4; font-size: 0.8rem; line-height: 1.6; padding: 0 0.3rem; }
+.telemetry-panel { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; border: 1px solid #31434c; background: #31434c; }
+.telemetry-panel > div { padding: 1rem; background: #0e202b; min-width: 0; }
+.telemetry-panel span { display: block; color: #9fb9c8; font-size: 0.75rem; }
+.telemetry-panel strong { display: block; margin-top: 0.4rem; font: 1.4rem Consolas, monospace; color: #eef8ff; overflow-wrap: anywhere; }
+.outcome { position: static; margin: 0 0 1rem; padding: 1rem 1.2rem; }
+.outcome h2 { font-size: 1.15rem; line-height: 1.5; }
+.outcome p { line-height: 1.7; }
+.control-deck { padding: 1.2rem; }
+.control-help { font-size: 0.78rem; color: #b1c2cd; line-height: 1.7; }
+.burn-heading { margin-top: 1.6rem; border-top: 1px solid #31434c; padding-top: 1rem; color: #ffd27a; }
+.check-row { justify-content: flex-start; align-items: center; gap: 0.6rem; margin: 1rem 0; }
+.check-row input { width: 18px; height: 18px; accent-color: var(--acid); }
+.hint-row { margin-top: 0.5rem; }
+.secondary button { min-height: 40px; }
+.lab-notes { padding: 1rem 1.2rem; border: 1px dashed #385363; line-height: 1.8; font-size: 0.84rem; }
+.lab-notes summary { color: #c0d9e5; }
+.lab-notes ol { padding-left: 1.3rem; }
+@media (max-width: 1020px) {
+  main { padding: 1.5rem 2vw; }
+  .flight-layout { gap: 1rem; grid-template-columns: minmax(0, 1fr) 280px; }
+  .telemetry-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 880px) {
+  .flight-layout { grid-template-columns: 1fr; }
+  .control-deck { display: block; }
+  .control-deck label { margin: 1.1rem 0 0.4rem; }
+  .control-deck > .launch { margin: 1rem 0 0.7rem; }
+  .lab-stamp { display: none; }
+}
+@media (max-width: 520px) {
+  main { padding: 1rem 0.7rem; }
+  .objective-panel { padding: 1rem; }
+  .objective-panel label { display: block; }
+  .objective-panel label span { display: block; text-align: left; margin-top: 0.3rem; }
+  .flight-bar { padding: 0.6rem; font-size: 0.7rem; gap: 0.5rem; flex-wrap: wrap; }
+  .telemetry-panel > div { padding: 0.8rem; }
+  .legend span:last-child { display: inline; }
+  .mission-heading p:last-child { font-size: 0.875rem; }
+}

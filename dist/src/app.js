@@ -1,445 +1,309 @@
-import {
-  $,
-  freshSeed,
-  cleanSeed,
-  loadLocal,
-  saveLocal,
-  announce,
-  rng,
-  tool,
-} from "./core.js";
-import { makeSector, simulate, flightScore, TITLES } from "./model.js";
-const KEY = "orbit-courier-v1";
-let stored = loadLocal(KEY, { best: {}, unlocked: 1 }),
-  record = {
-    best: stored && typeof stored.best === "object" ? stored.best : {},
-    unlocked: Math.max(1, Math.min(10, Number(stored?.unlocked) || 1)),
-  };
-let seed = freshSeed(),
-  stage = 1,
-  scene,
-  phase = "aim",
-  attempts = 0,
-  hinted = false,
-  trails = [],
-  flight = null,
-  cursor = 0,
-  frame = 0,
-  last = 0,
-  dragging = false;
-const canvas = $("space"),
-  ctx = canvas.getContext("2d");
+import { $, freshSeed, cleanSeed, loadLocal, saveLocal, announce, rng, tool } from "./core.js";
+import { makeSector, simulate, flightScore, TITLES, LIMITS } from "./model.js";
+
+const KEY = "orbit-courier-v2";
+const old = loadLocal(KEY, {});
+let record = { best: {}, unlocked: Number.isInteger(old?.unlocked) ? Math.max(1, Math.min(TITLES.length, old.unlocked)) : 1 };
+if (old?.best && typeof old.best === "object") {
+  for (const [key, value] of Object.entries(old.best).slice(-100)) {
+    if (/^[A-Za-z0-9-]{1,40}-[1-6]$/.test(key) && Number.isFinite(value) && value >= 0 && value <= 1500) record.best[key] = value;
+  }
+}
+let seed = freshSeed(), stage = 1, scene, phase = "aim", attempts = 0, hinted = false;
+let trails = [], flight = null, prediction = null, cursor = 0, playTime = 0, frame = 0, last = 0, dragging = false;
+const canvas = $("space"), ctx = canvas.getContext("2d");
 let stars = [];
+const value = (id) => Number($(id).value);
+const plan = () => ({ angle: value("angle"), power: value("power"), burn: value("burn"), burnAt: value("burnAt") });
+const n = (number, digits = 1) => Number.isFinite(number) ? number.toFixed(digits) : "—";
+const labels = { orbit: "ORBIT / 궤도 유지", escape: "ESCAPE / 탈출", delivery: "DELIVERY / 속도 제한 배송", flyby: "FLYBY / 근접 통과 배송" };
+
 function save() {
-  if (!saveLocal(KEY, record))
-    announce("이 브라우저에 기록을 저장할 수 없습니다.");
+  if (!saveLocal(KEY, record)) announce("현재 세션에서는 진행되지만 이 브라우저에 기록을 저장할 수 없습니다.");
 }
-function angle() {
-  return Number($("angle").value);
-}
-function power() {
-  return Number($("power").value);
+function setPlan(p) {
+  for (const id of ["angle", "power", "burn", "burnAt"]) {
+    const step = Number($(id).step);
+    $(id).value = String(Math.round(p[id] / step) * step);
+  }
 }
 function controls() {
-  $("angle-output").value = angle() + "°";
-  $("power-output").value = String(power());
-  $("angle").disabled = ["flying", "paused"].includes(phase);
-  $("power").disabled = ["flying", "paused"].includes(phase);
+  const locked = phase !== "aim";
+  for (const id of ["angle", "power", "burn", "burnAt"]) {
+    $(id).disabled = locked;
+    $(id + "-output").value = n(value(id), id === "burnAt" ? 2 : 1) + (id === "angle" ? "°" : "");
+  }
   $("launch").disabled = ["success", "failure"].includes(phase);
-  $("launch").textContent =
-    phase === "flying"
-      ? "일시정지"
-      : phase === "paused"
-        ? "비행 계속"
-        : "배송 시작";
+  $("launch").textContent = phase === "flying" ? "일시정지" : phase === "paused" ? "비행 계속" : "임무 실행";
+  $("hint").disabled = $("reference").disabled = $("preview").disabled = locked;
+}
+function requirements() {
+  const m = scene.mission;
+  if (m.type === "orbit") return [
+    `중심 반경 ${n(m.radius * (1 - m.tolerance))}–${n(m.radius * (1 + m.tolerance))} 유지`,
+    `중심 행성 기준 이심률 e ≤ ${m.maxEccentricity} (원에 가까울수록 0)`,
+    `두 조건을 연속 ${m.turns}바퀴 유지 · 벗어나면 진행률 초기화`,
+  ];
+  if (m.type === "escape") return [`중심 반경 ${m.radius} 이상의 탈출 경계 통과`, "총 비에너지 E > 0 · 바깥 방향 속도 > 0", "화면 이탈만으로는 성공하지 않음"];
+  const result = [`정거장 중심에서 ${scene.target.radius} 이내로 진입`, `진입 속도 ≤ ${scene.target.maxSpeed} · 충돌 없이 도착`];
+  if (m.type === "flyby") result.unshift(`아틀라스 반경 ${m.near} 이내 → ${m.exit} 밖 · 무분사 방향 전환 ≥ ${m.minTurn}°`);
+  return result;
 }
 function sector() {
   cancelAnimationFrame(frame);
-  phase = "aim";
-  attempts = 0;
-  hinted = false;
-  trails = [];
-  flight = null;
-  cursor = 0;
+  dragging = false; phase = "aim"; attempts = 0; hinted = false;
+  trails = []; flight = null; prediction = null; cursor = 0; playTime = 0;
   scene = makeSector(stage, seed);
-  const r = rng(seed + "stars");
-  stars = Array.from({ length: 130 }, () => ({
-    x: r() * 900,
-    y: r() * 560,
-    size: r() * 1.4 + 0.4,
-  }));
-  $("sector").textContent =
-    "SECTOR " + String(stage).padStart(2, "0") + " / 10";
+  setPlan(scene.defaults);
+  const random = rng(seed + "stars");
+  stars = Array.from({ length: 100 }, () => ({ x: random() * 900, y: random() * 560, size: random() * 1.4 + 0.4 }));
+  $("sector").textContent = `MISSION ${String(stage).padStart(2, "0")} / ${TITLES.length} · ${scene.variant}`;
   $("mission-title").textContent = scene.title;
-  $("mission-copy").textContent =
-    stage < 4
-      ? "발사 방향과 세기를 정해 정거장에 도착하세요."
-      : stage < 8
-        ? "여러 중력원 사이에서 안전한 항로를 찾아보세요."
-        : "작은 목적지까지 궤적을 정밀하게 조절하세요.";
-  $("stage").replaceChildren(
-    ...TITLES.map((t, i) =>
-      Object.assign(document.createElement("option"), {
-        value: String(i + 1),
-        textContent: String(i + 1).padStart(2, "0") + " · " + t,
-        disabled: i + 1 > record.unlocked,
-      }),
-    ),
-  );
+  $("mission-copy").textContent = scene.lesson;
+  $("mission-type").textContent = labels[scene.mission.type];
+  $("objectives").replaceChildren(...requirements().map((text) => Object.assign(document.createElement("li"), { textContent: text })));
+  $("stage").replaceChildren(...TITLES.map((title, i) => Object.assign(document.createElement("option"), {
+    value: String(i + 1), textContent: `${i + 1 > record.unlocked ? "잠김 · " : ""}${i + 1}. ${title}`, disabled: i + 1 > record.unlocked,
+  })));
   $("stage").value = String(stage);
   $("seed").value = seed;
   $("attempts").textContent = "00";
   $("best").textContent = record.best[seed + "-" + stage] || "—";
-  $("outcome").hidden = true;
-  $("next").hidden = true;
+  $("progress-copy").textContent = `${record.unlocked} / ${TITLES.length} 임무 열림 · 성공하면 다음 임무 해금`;
+  $("outcome").hidden = $("next").hidden = true;
   $("flight-state").textContent = "발사 준비";
-  $("telemetry").textContent = "T+0.00 s";
-  $("status").textContent = "캔버스에서 드래그하거나 각도·추진력을 조절하세요.";
+  $("status").textContent = "한 번에 한 변수만 바꿔 보세요. 예상 궤적은 계획이며 실행 기록에 포함되지 않습니다.";
+  updatePlan();
+}
+function updatePlan() {
   controls();
+  if (phase === "aim") {
+    const p = plan();
+    prediction = simulate(scene, p.angle, p.power, p);
+    telemetry(prediction.path[0]);
+    $("prediction-copy").textContent = $("preview").checked ? `예상 결과: ${prediction.status === "success" ? "목표 달성 가능" : prediction.reason} · T+${n(prediction.time, 2)}` : "예상 궤적 꺼짐 · 발사 벡터만 표시";
+  }
   draw();
 }
-function line(path, color, dashed = false) {
+function telemetry(point) {
+  const q = point.metrics, m = scene.mission;
+  $("telemetry").textContent = `T+${n(point.t, 2)} / 40 · 모형 시간`;
+  $("speed-now").textContent = n(q.speed);
+  $("radius-now").textContent = n(q.radius);
+  $("energy-now").textContent = n(q.conservedEnergy, 0);
+  $("ecc-now").textContent = n(q.eccentricity, 3);
+  $("burn-state").textContent = value("burn") === 0 ? "예약 분사 없음" : q.burnDone ? "예약 분사 완료" : `T+${n(value("burnAt"), 2)}에 Δv ${value("burn") > 0 ? "+" : ""}${n(value("burn"))}`;
+  let progress = 0, text = "";
+  if (m.type === "orbit") {
+    progress = Math.min(100, q.turns / m.turns * 100);
+    text = `${q.orbitActive ? "유지 중" : "궤도 조건 대기"} · ${n(q.turns, 2)} / ${m.turns}바퀴`;
+  } else if (m.type === "escape") {
+    progress = Math.min(100, q.radius / m.radius * 100);
+    text = `반경 ${n(q.radius)} / ${m.radius} · E ${q.conservedEnergy > 1e-6 ? "> 0 충족" : "≤ 0 미달"} · 방사속도 ${n(q.radialSpeed)}`;
+  } else {
+    progress = Math.max(0, Math.min(100, (1 - Math.max(0, q.closestTarget - scene.target.radius) / Math.hypot(scene.start.x - scene.target.x, scene.start.y - scene.target.y)) * 100));
+    text = `정거장 최근접 ${n(q.closestTarget)} / ${scene.target.radius} · 속도 ${n(q.speed)} / ${scene.target.maxSpeed}`;
+    if (m.type === "flyby") text += ` · 근접 통과 ${q.flyby ? "완료" : q.near ? "탈출 대기" : "미완료"} (${n(q.turn)}°)`;
+  }
+  $("mission-progress").value = progress;
+  $("metric-status").textContent = text;
+}
+function line(path, color, dashed = false, width = 2) {
   if (path.length < 2) return;
-  ctx.beginPath();
-  ctx.moveTo(path[0].x, path[0].y);
-  for (const p of path.slice(1)) ctx.lineTo(p.x, p.y);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = dashed ? 1.5 : 2.5;
-  ctx.setLineDash(dashed ? [3, 7] : []);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
+  for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dashed ? [4, 7] : []); ctx.stroke(); ctx.setLineDash([]);
+}
+function circle(x, y, radius, color, dashed = false, width = 1) {
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dashed ? [5, 8] : []);
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+}
+function text(label, x, y, color = "#9bb5c5") {
+  ctx.fillStyle = color; ctx.font = '13px "Malgun Gothic", sans-serif'; ctx.fillText(label, x, y);
 }
 function draw() {
-  ctx.clearRect(0, 0, 900, 560);
-  ctx.fillStyle = "#050e17";
-  ctx.fillRect(0, 0, 900, 560);
-  for (const s of stars) {
-    ctx.fillStyle = "#96b2bf";
-    ctx.globalAlpha = 0.45;
-    ctx.fillRect(s.x, s.y, s.size, s.size);
+  ctx.clearRect(0, 0, 900, 560); ctx.fillStyle = "#050e17"; ctx.fillRect(0, 0, 900, 560);
+  ctx.fillStyle = "#638190";
+  for (const star of stars) ctx.fillRect(star.x, star.y, star.size, star.size);
+  for (let x = 0; x <= 900; x += 100) line([{ x, y: 0 }, { x, y: 560 }], "#122b38", false, 1);
+  for (let y = 0; y <= 560; y += 80) line([{ x: 0, y }, { x: 900, y }], "#122b38", false, 1);
+  const m = scene.mission, primary = scene.bodies[0];
+  if (m.type === "orbit") {
+    circle(primary.x, primary.y, m.radius, "#6bbddc38", false, m.radius * m.tolerance * 2);
+    circle(primary.x, primary.y, m.radius, "#73c7e6", true);
+    text(`목표 궤도 r=${m.radius}`, primary.x - 65, primary.y - m.radius - 18, "#73c7e6");
   }
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = "#17313f";
-  ctx.lineWidth = 1;
-  for (let x = 0; x <= 900; x += 100) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, 560);
-    ctx.stroke();
+  if (m.type === "escape") {
+    circle(primary.x, primary.y, m.radius, "#73c7e6", true, 2);
+    text(`탈출 경계 r=${m.radius} · E > 0`, primary.x - 80, primary.y - m.radius + 20, "#73c7e6");
   }
-  for (let y = 0; y <= 560; y += 80) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(900, y);
-    ctx.stroke();
+  if (m.type === "flyby") {
+    const b = scene.bodies[m.body];
+    circle(b.x, b.y, m.near, "#ffd27a", false, 2); circle(b.x, b.y, m.exit, "#ffd27a", true);
+    text("무분사 근접 통과 구역", b.x - 72, b.y - m.exit - 10, "#ffd27a");
   }
   for (const b of scene.bodies) {
-    ctx.strokeStyle = "#29424c";
-    ctx.setLineDash([4, 8]);
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.radius + 38, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    const gradient = ctx.createRadialGradient(
-      b.x - b.radius * 0.4,
-      b.y - b.radius * 0.4,
-      2,
-      b.x,
-      b.y,
-      b.radius,
-    );
-    gradient.addColorStop(0, b.color);
-    gradient.addColorStop(1, "#1f2b30");
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = b.color;
-    ctx.stroke();
+    const gradient = ctx.createRadialGradient(b.x - b.radius * 0.4, b.y - b.radius * 0.4, 1, b.x, b.y, b.radius);
+    gradient.addColorStop(0, b.color); gradient.addColorStop(1, "#192a35");
+    ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.fill();
+    circle(b.x, b.y, b.radius, b.color);
+    text(b.name, b.x - 24, b.y + b.radius + 22);
   }
-  const target = scene.target;
-  ctx.strokeStyle = "#c4fb5c";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(target.x, target.y, target.radius, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(target.x, target.y, target.radius + 7, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = "#c4fb5c";
-  ctx.font = "13px Consolas";
-  ctx.fillText("DROP-OFF", target.x - 28, target.y - target.radius - 16);
-  for (const trail of trails) line(trail, "#43616e", true);
-  if (flight) line(flight.path.slice(0, Math.floor(cursor) + 1), "#c4fb5c");
+  if (scene.target) {
+    const t = scene.target;
+    circle(t.x, t.y, t.radius, "#c4fb5c", false, 2); circle(t.x, t.y, t.radius + 7, "#c4fb5c80");
+    line([{ x: t.x - 6, y: t.y }, { x: t.x + 6, y: t.y }], "#c4fb5c");
+    text(`배송 · 속도 ≤ ${t.maxSpeed}`, t.x - 65, t.y - t.radius - 18, "#c4fb5c");
+  }
+  circle(scene.start.x, scene.start.y, 7, "#f1f5f0");
+  text("START", scene.start.x + 13, scene.start.y + 18);
+  for (const trail of trails) line(trail, "#758b9966", true);
+  if (phase === "aim" && prediction && $("preview").checked) {
+    line(prediction.path, "#73c7e690", true);
+    for (const e of prediction.events.filter((e) => e.type === "burn")) {
+      circle(e.x, e.y, 8, "#ffd27a", true); text("Δv 예약", e.x + 12, e.y - 8, "#ffd27a");
+    }
+    const end = prediction.path.at(-1);
+    circle(end.x, end.y, 6, prediction.status === "success" ? "#c4fb5c" : "#ff978c");
+  }
+  if (flight) {
+    const visible = flight.path.slice(0, cursor + 1);
+    line(visible, phase === "failure" ? "#ff978c" : "#c4fb5c", false, 2.5);
+    for (let i = 60; i < visible.length; i += 60) {
+      const p = visible[i]; circle(p.x, p.y, 2, "#edf2ec");
+    }
+    for (const e of flight.events.filter((e) => e.t <= flight.path[cursor].t)) {
+      circle(e.x, e.y, 8, "#ffd27a", false, 2); text(e.type === "burn" ? "Δv 분사" : "근접 통과 ✓", e.x + 12, e.y - 8, "#ffd27a");
+    }
+  }
   if (phase === "aim") {
-    const rad = (angle() * Math.PI) / 180,
-      length = power() * 0.4;
-    const to = {
-      x: scene.start.x + Math.cos(rad) * length,
-      y: scene.start.y + Math.sin(rad) * length,
-    };
-    line([scene.start, to], "#c4fb5c");
-    ctx.beginPath();
-    ctx.arc(to.x, to.y, 5, 0, Math.PI * 2);
-    ctx.fillStyle = "#c4fb5c";
-    ctx.fill();
+    const rad = value("angle") * Math.PI / 180, length = value("power") * 0.6;
+    line([scene.start, { x: scene.start.x + Math.cos(rad) * length, y: scene.start.y + Math.sin(rad) * length }], "#f2f4f0", false, 2);
   }
-  const point = flight
-    ? flight.path[Math.min(Math.floor(cursor), flight.path.length - 1)]
-    : scene.start;
-  ctx.save();
-  ctx.translate(point.x, point.y);
-  let heading = (angle() * Math.PI) / 180;
-  if (flight && cursor > 1) {
-    const prev = flight.path[Math.max(0, Math.floor(cursor) - 1)];
-    heading = Math.atan2(point.y - prev.y, point.x - prev.x);
-  }
-  ctx.rotate(heading);
-  ctx.fillStyle = "#edf2ec";
-  ctx.beginPath();
-  ctx.moveTo(12, 0);
-  ctx.lineTo(-8, -6);
-  ctx.lineTo(-5, 0);
-  ctx.lineTo(-8, 6);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
+  const point = flight ? flight.path[cursor] : { ...scene.start, vx: Math.cos(value("angle") * Math.PI / 180), vy: Math.sin(value("angle") * Math.PI / 180) };
+  ctx.save(); ctx.translate(point.x, point.y); ctx.rotate(Math.atan2(point.vy, point.vx));
+  ctx.fillStyle = "#edf2ec"; ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-8, -6); ctx.lineTo(-5, 0); ctx.lineTo(-8, 6); ctx.closePath(); ctx.fill(); ctx.restore();
 }
 function end() {
   phase = flight.status === "success" ? "success" : "failure";
-  $("flight-state").textContent =
-    phase === "success" ? "배송 완료" : "항로 재설정";
-  const score = flightScore(flight, power(), attempts, hinted);
-  $("outcome").replaceChildren();
-  const h = document.createElement("h2"),
-    p = document.createElement("p");
-  h.textContent =
-    phase === "success"
-      ? "DELIVERED / " + score + " PT"
-      : flight.status === "collision"
-        ? "행성과 충돌했습니다."
-        : "정거장에 도착하지 못했습니다.";
-  p.textContent =
-    phase === "success"
-      ? "추진력 " +
-        power() +
-        " · 비행 " +
-        flight.time.toFixed(2) +
-        " s · 시도 " +
-        attempts +
-        "회"
-      : "궤적을 참고해 각도와 세기를 조금씩 바꿔보세요.";
-  $("outcome").append(h, p);
-  $("outcome").hidden = false;
+  $("flight-state").textContent = phase === "success" ? "임무 성공" : "실험 종료 · 재설정 가능";
+  const score = flightScore(flight, value("power"), attempts, hinted);
+  const heading = Object.assign(document.createElement("h2"), { textContent: phase === "success" ? `MISSION COMPLETE / ${score} PT` : "조건 미충족 · 다음 실험을 계획하세요" });
+  const detail = Object.assign(document.createElement("p"), { textContent: `${flight.reason} T+${n(flight.time, 2)} · 속도 ${n(flight.metrics.speed)} · E ${n(flight.metrics.conservedEnergy, 0)}` });
+  $("outcome").replaceChildren(heading, detail); $("outcome").hidden = false;
   if (phase === "success") {
     const key = seed + "-" + stage;
-    record.best[key] = Math.max(Number(record.best[key]) || 0, score);
-    const keys = Object.keys(record.best);
-    if (keys.length > 100) delete record.best[keys[0]];
-    record.unlocked = Math.max(record.unlocked, Math.min(10, stage + 1));
+    record.best[key] = Math.max(record.best[key] || 0, score);
+    while (Object.keys(record.best).length > 100) delete record.best[Object.keys(record.best)[0]];
+    record.unlocked = Math.max(record.unlocked, Math.min(TITLES.length, stage + 1));
     save();
     $("best").textContent = record.best[key];
-    $("next").hidden = stage === 10;
-    $("status").textContent =
-      stage === 10
-        ? "10개 구간을 모두 배송했습니다. 새 항로에도 도전해보세요."
-        : "성공했습니다. 더 적은 추진력으로 최고 기록을 노려보세요.";
-  } else $("status").textContent = "실패 궤적을 남겼습니다. 다시 조준해보세요.";
-  controls();
-  draw();
+    $("next").hidden = stage === TITLES.length;
+    for (const option of $("stage").options) {
+      option.disabled = Number(option.value) > record.unlocked;
+      if (!option.disabled) option.textContent = `${option.value}. ${TITLES[Number(option.value) - 1]}`;
+    }
+    $("progress-copy").textContent = `${record.unlocked} / ${TITLES.length} 임무 열림`;
+    $("status").textContent = stage === TITLES.length ? "6개 임무를 완료했습니다. 변수 하나를 바꾸며 성공 조건의 경계를 비교해 보세요." : "새 임무가 열렸습니다. 다시 조준하면 최근 3회 궤적을 비교할 수 있습니다.";
+  } else $("status").textContent = flight.reason;
+  controls(); draw();
 }
 function animate(now) {
   if (phase !== "flying") return;
   const delta = last ? Math.min(0.08, (now - last) / 1000) : 0;
-  last = now;
-  cursor = Math.min(flight.path.length - 1, cursor + delta * 120);
-  $("telemetry").textContent =
-    "T+" + flight.path[Math.floor(cursor)].t.toFixed(2) + " s";
-  draw();
-  if (cursor >= flight.path.length - 1) end();
-  else frame = requestAnimationFrame(animate);
+  last = now; playTime += delta * value("playback");
+  while (cursor + 1 < flight.path.length && flight.path[cursor + 1].t <= playTime) cursor++;
+  telemetry(flight.path[cursor]); draw();
+  if (cursor >= flight.path.length - 1) end(); else frame = requestAnimationFrame(animate);
 }
 function launch() {
+  dragging = false;
   if (phase === "flying") {
-    phase = "paused";
-    cancelAnimationFrame(frame);
-    $("flight-state").textContent = "일시정지";
-    controls();
-    return;
+    phase = "paused"; cancelAnimationFrame(frame); $("flight-state").textContent = "일시정지"; controls(); return;
   }
   if (phase === "paused") {
-    phase = "flying";
-    last = 0;
-    $("flight-state").textContent = "배송 중";
-    controls();
-    frame = requestAnimationFrame(animate);
-    return;
+    phase = "flying"; last = 0; $("flight-state").textContent = "비행 중"; controls(); frame = requestAnimationFrame(animate); return;
   }
   if (phase !== "aim") return;
-  attempts++;
-  $("attempts").textContent = String(attempts).padStart(2, "0");
-  flight = simulate(scene, angle(), power());
-  cursor = 0;
-  phase = "flying";
-  last = 0;
-  $("outcome").hidden = true;
-  $("flight-state").textContent = "배송 중";
-  controls();
-  frame = requestAnimationFrame(animate);
+  attempts++; $("attempts").textContent = String(attempts).padStart(2, "0");
+  const p = plan(); flight = simulate(scene, p.angle, p.power, p);
+  cursor = 0; playTime = 0; last = 0; phase = "flying";
+  $("outcome").hidden = true; $("flight-state").textContent = "비행 중";
+  $("prediction-copy").textContent = "실행 궤적 · 점은 모형 시간 1 간격 · 노란 원은 실제 분사/근접 통과";
+  controls(); frame = requestAnimationFrame(animate);
 }
 function retry() {
-  cancelAnimationFrame(frame);
-  if (flight) trails.push(flight.path.slice(0, Math.floor(cursor) + 1));
-  trails = trails.slice(-3);
-  phase = "aim";
-  flight = null;
-  cursor = 0;
-  $("outcome").hidden = true;
-  $("next").hidden = true;
-  $("flight-state").textContent = "발사 준비";
-  $("telemetry").textContent = "T+0.00 s";
-  controls();
-  draw();
+  cancelAnimationFrame(frame); dragging = false;
+  if (flight) trails.push(flight.path.slice(0, cursor + 1));
+  trails = trails.slice(-3); phase = "aim"; flight = null; cursor = 0; playTime = 0;
+  $("outcome").hidden = $("next").hidden = true; $("flight-state").textContent = "발사 준비";
+  $("status").textContent = "직전 비행은 회색 점선입니다. 설정을 바꿔 비교하세요.";
+  updatePlan();
 }
-$("angle").oninput = $("power").oninput = () => {
-  controls();
-  draw();
-};
-$("launch").onclick = launch;
-$("retry").onclick = retry;
+for (const id of ["angle", "power", "burn", "burnAt", "preview"]) $(id).oninput = updatePlan;
+$("launch").onclick = launch; $("retry").onclick = retry;
+$("reset").onclick = sector;
 $("hint").onclick = () => {
   if (phase !== "aim") return;
-  hinted = true;
-  $("status").textContent =
-    "가능한 항로 중 하나는 각도 " +
-    scene.witness.angle +
-    "° 근처, 추진력 " +
-    scene.witness.power +
-    " 근처입니다. 힌트 사용 시 성공 점수 −120.";
+  hinted = true; $("status").textContent = scene.hint + " · 이번 임무 힌트 감점 −120.";
 };
-$("next").onclick = () => {
-  if (phase === "success" && stage < 10) {
-    stage++;
-    sector();
-  }
+$("reference").onclick = () => {
+  if (phase !== "aim") return;
+  hinted = true; setPlan(scene.reference); updatePlan();
+  $("status").textContent = "참고 계획을 적용했습니다. 실행해서 계기를 관찰한 뒤 변수 하나를 바꿔 비교하세요. 성공 점수 −120.";
 };
+$("next").onclick = () => { if (phase === "success" && stage < TITLES.length) { stage++; sector(); } };
 $("stage").onchange = () => {
-  stage = Number($("stage").value);
-  sector();
+  const selected = value("stage");
+  if (Number.isInteger(selected) && selected >= 1 && selected <= record.unlocked) { stage = selected; sector(); }
 };
-$("apply-seed").onclick = () => {
-  try {
-    const next = cleanSeed($("seed").value);
-    seed = next;
-    stage = 1;
-    sector();
-  } catch (e) {
-    announce(e.message);
-  }
-};
-$("new-route").onclick = () => {
-  seed = freshSeed();
-  stage = 1;
-  sector();
-};
+$("apply-seed").onclick = () => { try { seed = cleanSeed($("seed").value); stage = 1; sector(); } catch (e) { announce(e.message); } };
+$("new-route").onclick = () => { seed = freshSeed(); stage = 1; sector(); };
 $("clear").onclick = () => {
-  if (confirm("이 브라우저의 배송 최고 기록과 구간 진행을 삭제할까요?")) {
-    record = { best: {}, unlocked: 1 };
-    save();
-    stage = 1;
-    sector();
-  }
+  if (!confirm("이 브라우저의 구버전·현재 임무 기록과 해금을 모두 삭제할까요?")) return;
+  record = { best: {}, unlocked: 1 };
+  try { localStorage.removeItem(KEY); localStorage.removeItem("orbit-courier-v1"); announce("이 기기의 임무 기록을 삭제했습니다."); }
+  catch { announce("브라우저가 기록 삭제를 차단했습니다. 현재 세션의 기록만 초기화했습니다."); }
+  stage = 1; sector();
 };
 function aimAt(e) {
-  const box = canvas.getBoundingClientRect(),
-    x = ((e.clientX - box.left) * 900) / box.width,
-    y = ((e.clientY - box.top) * 560) / box.height,
-    dx = x - scene.start.x,
-    dy = y - scene.start.y;
-  $("angle").value = String(
-    Math.max(
-      -80,
-      Math.min(25, Math.round((Math.atan2(dy, dx) * 180) / Math.PI)),
-    ),
-  );
-  $("power").value = String(
-    Math.max(140, Math.min(420, Math.round(Math.hypot(dx, dy) / 0.4 / 5) * 5)),
-  );
-  controls();
-  draw();
+  if (phase !== "aim") return;
+  const box = canvas.getBoundingClientRect();
+  const dx = (e.clientX - box.left) * 900 / box.width - scene.start.x;
+  const dy = (e.clientY - box.top) * 560 / box.height - scene.start.y;
+  $("angle").value = String(Math.round(Math.atan2(dy, dx) * 180 / Math.PI));
+  $("power").value = String(Math.max(20, Math.min(320, Math.round(Math.hypot(dx, dy) / 0.6))));
+  updatePlan();
 }
 canvas.onpointerdown = (e) => {
   if (phase !== "aim" || !e.isPrimary || e.button !== 0) return;
-  dragging = true;
-  canvas.setPointerCapture(e.pointerId);
-  aimAt(e);
+  dragging = true; canvas.setPointerCapture(e.pointerId); aimAt(e);
 };
-canvas.onpointermove = (e) => {
-  if (dragging) aimAt(e);
-};
-canvas.onpointerup = canvas.onpointercancel = () => (dragging = false);
+canvas.onpointermove = (e) => { if (dragging) aimAt(e); };
+canvas.onpointerup = canvas.onpointercancel = canvas.onlostpointercapture = () => { dragging = false; };
 canvas.onkeydown = (e) => {
-  if (e.key === " ") {
+  if (e.key === " ") { e.preventDefault(); launch(); }
+  else if (phase === "aim" && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
     e.preventDefault();
-    launch();
-  } else if (
-    phase === "aim" &&
-    ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
-  ) {
-    e.preventDefault();
-    if (e.key === "ArrowLeft") $("angle").value = String(angle() - 1);
-    if (e.key === "ArrowRight") $("angle").value = String(angle() + 1);
-    if (e.key === "ArrowUp") $("power").value = String(power() + 5);
-    if (e.key === "ArrowDown") $("power").value = String(power() - 5);
-    controls();
-    draw();
+    const id = ["ArrowLeft", "ArrowRight"].includes(e.key) ? "angle" : "power";
+    $(id).value = String(value(id) + (["ArrowRight", "ArrowUp"].includes(e.key) ? 1 : -1)); updatePlan();
   }
 };
-const pause = () => {
-  if (phase === "flying") launch();
-};
+const pause = () => { if (phase === "flying") launch(); };
 addEventListener("blur", pause);
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) pause();
+document.addEventListener("visibilitychange", () => { if (document.hidden) pause(); });
+addEventListener("pagehide", pause);
+tool("configure_flight", "항로와 발사·분사 설정", {
+  type: "object", properties: {
+    stage: { type: "integer", minimum: 1, maximum: TITLES.length }, seed: { type: "string", maxLength: 40 },
+    ...Object.fromEntries(Object.entries(LIMITS).map(([key, [minimum, maximum]]) => [key, { type: "number", minimum, maximum }])),
+  }, required: ["stage", "seed", "angle", "power"], additionalProperties: false,
+}, (input) => {
+  if (!input || !Number.isInteger(input.stage) || input.stage < 1 || input.stage > record.unlocked) throw Error("Invalid mission");
+  const candidate = { angle: input.angle, power: input.power, burn: input.burn ?? 0, burnAt: input.burnAt ?? 4 };
+  for (const [key, [min, max]] of Object.entries(LIMITS)) if (!Number.isFinite(candidate[key]) || candidate[key] < min || candidate[key] > max) throw Error("Invalid flight configuration");
+  const nextSeed = cleanSeed(input.seed);
+  seed = nextSeed; stage = input.stage; sector(); setPlan(candidate); updatePlan();
+  return { stage, seed, ...plan(), state: phase };
 });
-addEventListener("pagehide", () => cancelAnimationFrame(frame));
-tool(
-  "configure_flight",
-  "항로와 발사 설정",
-  {
-    type: "object",
-    properties: {
-      stage: { type: "integer", minimum: 1, maximum: 10 },
-      seed: { type: "string", maxLength: 40 },
-      angle: { type: "number", minimum: -80, maximum: 25 },
-      power: { type: "number", minimum: 140, maximum: 420 },
-    },
-    required: ["stage", "seed", "angle", "power"],
-    additionalProperties: false,
-  },
-  (input) => {
-    if (
-      !input ||
-      !Number.isInteger(input.stage) ||
-      input.stage < 1 ||
-      input.stage > record.unlocked ||
-      !Number.isFinite(input.angle) ||
-      input.angle < -80 ||
-      input.angle > 25 ||
-      !Number.isFinite(input.power) ||
-      input.power < 140 ||
-      input.power > 420
-    )
-      throw Error("Invalid flight configuration");
-    const s = cleanSeed(input.seed);
-    seed = s;
-    stage = input.stage;
-    sector();
-    $("angle").value = String(input.angle);
-    $("power").value = String(input.power);
-    controls();
-    draw();
-    return { stage, seed, angle: angle(), power: power(), state: phase };
-  },
-);
 sector();
