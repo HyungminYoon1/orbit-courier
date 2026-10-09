@@ -1,6 +1,6 @@
 # 검증 기록
 
-## 2026-10-09 — 자연스러운 한국어 임무 안내 / LOCAL
+## 2026-10-09 — 자연스러운 한국어 임무 안내 / LOCAL + REMOTE_CI + LIVE
 
 - VERIFIED: 지정 공개 URL의 기존 화면, orbit-courier 파일 목록·초기 Git 상태, architecture.md·README.md·decisions.md·package.json·gitattributes, HTML·model/app/feedback 전체와 관련 모델/피드백/새 문구 시험·개발/검사 도구. WEB LAB의 구조·README·해당 소개·카탈로그 시험과 실제 캡처를 확인했습니다.
 - PARTIAL: 두 저장소 전체의 재감사는 아닙니다. 물리 계산·저장 경계·CSS·배포 구조를 새로 설계하지 않았으며, 다른 앱·개인 자료·환경 파일은 NOT_INSPECTED입니다.
@@ -9,7 +9,10 @@
 - MODEL_COMPARISON: 변경 전 구현04a410ee884c685cab8d6204d9f33d0073bca19a와 6임무×4코드×8계획=192개 비교 PASS. 제목/설명/힌트/결과 이유를 제외한 지도·설정·판정·전체 궤적·표본·이벤트·종료 시각·연료·점수는 동일합니다. 난이도·물리·해금·저장 키·공개 랭킹 정책 변경 없음.
 - LOCAL_BROWSER: headless Chromium에서 정상 코드 입력·힌트·참고 계획·실행·다음 임무로 여섯 임무를 실제 완료. 기본 설정 실패도 실패로 유지됩니다. 도움을 받은 성공이며 독립 완료 인증이 아닙니다. 각 조준/성공 화면390×900·320×900 가로 넘침 없음. 코드·6번 임무 새로고침 복원, 기호 설명 열기, 관찰한 pageerror0·실행 중 fetch/XHR/WebSocket0.
 - PREVIEW: 실제1440×1000의 3번 정거장 임무 조준 화면 JPEG와 5번/320px 화면을 육안 확인. WEB LAB의 해당 소개·정적 캡처만 갱신하며 다른14개 이미지는 보존합니다.
-- EVIDENCE_BOUNDARY: 물리 기기·모든 코드/엔진·초심자의 독립적인 이해도 평가는 NOT_RUN입니다. 원격 CI와 공개 반영은 배포 후 별도 확인하며 로컬 증거로 대신하지 않습니다. 이전 절은 과거 snapshot입니다.
+- REMOTE_CI: 구현 c6427b98db8211fca91986d2317874cb7665bc07의 [verify/deploy](https://github.com/HyungminYoon1/orbit-courier/actions/runs/37907843872) 모두 completed/success. WEB LAB10d342a6d619fcd0246f750d3a5e980e301bc212도 [verify/deploy PASS](https://github.com/HyungminYoon1/web-lab/actions/runs/37907846367). 정상 fast-forward 게시이며 비밀값·유료 서비스·새 저장 정책은 추가하지 않았습니다.
+- LIVE_FILES: 2026-10-09 17:56 KST, Orbit9개+갤러리20개=29/29 공개 파일 HTTP200·로컬 SHA-256 일치. 갱신된 실제 JPEG 포함.
+- LIVE_BROWSER: 공개 Orbit에서 기본 실패와 여섯 참고 계획의 실제 성공·수치 조건·힌트·결과 문구·코드/임무 복원을 다시 확인했습니다. 결과 점수1090/1029/1142/1136/1144/1000은 힌트/시도 감점 포함. 390/320px 조준과 결과 가로 넘침 없음, 관찰한 pageerror·실행 네트워크0. 공개 갤러리의 새 소개·JPEG 정상 로드와1440/390/320px 확인, 브라우저 콘솔 오류/경고0.
+- EVIDENCE_BOUNDARY: 물리 기기·모든 코드/엔진·초심자의 독립적인 이해도 평가는 NOT_RUN입니다. 후속 검증 문서 커밋은 dist를 변경하지 않으며 해당 워크플로는 [Actions 이력](https://github.com/HyungminYoon1/orbit-courier/actions)에서 구분합니다. 이전 절은 과거 snapshot입니다.
 
 ## 2026-10-09 — 최근 코드·실행 그래프·갤러리 요약 / LOCAL ONLY
 
