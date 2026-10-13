@@ -15,6 +15,14 @@ const value = (id) => Number($(id).value);
 const plan = () => ({ angle: value("angle"), power: value("power"), burn: value("burn"), burnAt: value("burnAt") });
 const n = (number, digits = 1) => Number.isFinite(number) ? number.toFixed(digits) : "—";
 const labels = { orbit: "한 바퀴 궤도 비행", escape: "행성 탈출", delivery: "정거장 도착", flyby: "중력으로 방향 바꾸기" };
+const experiments = [
+  "성공한 계획에서 각도와 분사는 그대로 두고 초기 속도만 10 낮추거나 높여 보세요. 세 비행의 거리·오차 그래프와 이심률을 비교하세요. 목표 원을 잠깐 지나는 것과 한 바퀴 유지하는 것은 어떻게 다를까요?",
+  "각도를 고정하고 초기 속도만 조금씩 높여 보세요. 경계를 넘은 비행도 E가 0 이하라면 실패합니다. 거리·에너지·바깥 방향 이동 중 어떤 조건이 부족했는지 결과 계기로 설명하세요.",
+  "정거장에 닿지만 과속한 계획에서 감속량 또는 분사 시점 중 하나만 바꾸세요. 감속 후 정거장을 빗나갈 수도 있습니다. 종료 속도 대신 결과에 표시된 실제 진입 속도로 두 계획을 비교하세요.",
+  "성공한 계획에서 각도만 1°씩 바꾸고 속도는 유지하세요. 이웃 행성이 있는 상태에서 반경 오차와 이심률 중 어떤 조건이 먼저 깨지는지 확인하세요. 이전 임무와 배치도 다르므로 두 결과의 차이를 이웃 중력 하나의 효과로 단정하지 마세요.",
+  "행성 곁을 지난 계획에서 초기 속도만 바꾸세요. 접근 거리·방향 변화·정거장 진입 속도를 함께 비교하고, 정거장에 닿았어도 통과 조건이 빠진 경우를 찾아보세요. 고정된 행성의 방향 전환을 움직이는 행성의 에너지 전달과 구분하세요.",
+  "성공한 계획의 초기 속도와 Δv를 유지하고 분사 시점만 앞뒤로 0.5씩 옮기세요. 목표 반경 도달과 원형에 가까운 궤도 유지가 함께 되는지 비교하세요. 바깥 궤도의 속도가 출발 속도보다 작아도 중간에 가속이 필요한 이유를 설명해 보세요.",
+];
 
 function save() {
   const saved = saveLocal(KEY, record);
@@ -80,6 +88,7 @@ function sector(resume, persist = true) {
   $("sector").textContent = `임무 ${stage} / ${TITLES.length} · ${scene.variant}`;
   $("mission-title").textContent = scene.title;
   $("mission-copy").textContent = scene.lesson;
+  $("experiment-copy").textContent = experiments[stage - 1];
   $("mission-type").textContent = labels[scene.mission.type];
   $("objectives").replaceChildren(...requirements().map((text) => Object.assign(document.createElement("li"), { textContent: text })));
   $("stage").replaceChildren(...TITLES.map((title, i) => Object.assign(document.createElement("option"), {
@@ -324,6 +333,7 @@ $("stage").onchange = () => {
   if (Number.isInteger(selected) && selected >= 1 && selected <= record.unlocked) { stage = selected; sector(); }
 };
 function openCode(nextSeed) {
+  announce("");
   seed = nextSeed;
   const previous = record.recent.find((r) => r.seed === seed);
   stage = previous?.stage ?? 1; sector(previous);

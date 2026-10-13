@@ -1,5 +1,19 @@
 # 검증 기록
 
+## 2026-10-13 — 비교 실험·코드 오류 복구 / LOCAL
+
+추가 화면 근거: 아래 QA 폴더의 `changed-guide-320.png`는 펼친 새 과제 부분의 원본 크기 캡처입니다(`capture.cjs`). 줄바꿈·잘림·320px 문서 폭을 확인했습니다. 확인한 격리 브라우저의 콘솔 오류·경고는 네 앱 모두0개입니다.
+
+- 소스: 저장소 목록·깨끗한 시작 상태, architecture.md, README.md, decisions/verification, gitattributes/gitignore/package, 공개 HTML/CSS와 모든 src 모듈, model/feedback/copy 시험, check/serve를 전체 확인했습니다(VERIFIED). 관련 records 시험은 목록·실행으로 확인했으며 전체 내용 재감사는 하지 않았습니다(PARTIAL). api-spec.md/requirements.md/AGENTS.md 없음. 부모 루트는 디렉터리 목록만 확인(PARTIAL); 형제 저장소·갤러리·순위 서버 내용은 NOT_INSPECTED/NOT_MODIFIED.
+- 오류: 잘못된 코드 → 정상 코드 적용 후에도 잘못된 코드 안내가 남음. 새 실제 앱 콜백 회귀 시험을 수정 전 FAIL, 수정 후 PASS로 확인했습니다. 정상 적용 전에 알림을 지우되 이후 저장 실패 안내는 유지합니다.
+- 개선: 여섯 임무별 비교 실험. 변수 하나씩 변경, 실제 진입 속도, 경계와 에너지, 분사 시점과 원형 유지, 고정 행성의 한계를 관측 결과로 설명하게 합니다. UI 변경 YES.
+- 파일: dist/index.html, dist/src/app.js, test/ui.test.js, README.md, docs/decisions.md, docs/verification.md.
+- 최종 로컬: Node v22.23.2, `npm test` 36/36, `npm run check` PASS, `git diff --check` PASS. 기존 물리·피드백·저장 시험 유지. model/core/records/progress/feedback 변경 없음.
+- 브라우저: 자기 loopback/격리 Playwright Chromium. 타원 발사 실패·이심률 진단 → 재조준 원궤도 독립 성공 → 참고 계획으로 나머지 5임무 성공. 독립 완료 수 1 유지, 일시정지/계속, 코드 거절/정상 복구, 코드·임무·힌트 재로딩, 기본 계획 초기화 확인. 1440×1000/390×844/320×844 결과 화면 가로 넘침 없음. range 값 설정은 표준 input 이벤트로 실행했으며 물리 입력 장치 시험은 아닙니다. 관찰한 pageerror 0.
+- 캡처: 무시된 `.qa/output/playwright/qa-20261013/`의 `ellipse-failure-1440.png`, `mission-1-1440.png`~`mission-6-1440.png`, `transfer-result-390.png`, `transfer-result-320.png`; desktop/mobile 육안 확인. 재현 스크립트 `qa.cjs`. 선택자: `#experiment-copy`, `#launch`, `#retry`, `#reference`, `#radius-chart`.
+- 근거(2026-10-13 확인): [NASA 궤도 종류와 고도·속도](https://science.nasa.gov/earth/earth-observatory/catalog-of-earth-satellite-orbits/), [NASA 궤도와 케플러 법칙](https://science.nasa.gov/solar-system/orbits-and-keplers-laws/). 원궤도 속도와 시간·분사는 이 저장소의 모형 단위이며 실제 항법 결과로 제시하지 않습니다. 수치 사례는 기존 해석값·전이·에너지 시험과 실제 재생으로 대조했습니다.
+- 한계: 모든 코드·장기 궤도·실제 터치·다른 엔진·스크린리더·동일 origin 갤러리 통합은 미검증. REMOTE_CI/LIVE NOT_RUN. 커밋/푸시/배포/다른 에이전트/외부 서비스 추가 없음.
+
 ## 2026-10-09 — 자연스러운 한국어 임무 안내 / LOCAL + REMOTE_CI + LIVE
 
 - VERIFIED: 지정 공개 URL의 기존 화면, orbit-courier 파일 목록·초기 Git 상태, architecture.md·README.md·decisions.md·package.json·gitattributes, HTML·model/app/feedback 전체와 관련 모델/피드백/새 문구 시험·개발/검사 도구. WEB LAB의 구조·README·해당 소개·카탈로그 시험과 실제 캡처를 확인했습니다.
