@@ -1,5 +1,16 @@
 # 결정 기록
 
+## D13 — Edge input/lifecycle guards / 2026-10-13
+
+- Context: systematic test-first audit exposed obsolete or unintended UI events; original failing assertions are in edge-cases-20261013.md.
+- Options: debounce all input; change flight rules; use event composition/repeat guard.
+- Decision: Ignore composing canvas key events and held-Space repeats before invoking launch/pause.
+- Rationale: prevent a stale/unintended event from changing the current session while retaining normal input and existing pure model rules.
+- Affected files: dist/src/app.js, test/ui.test.js, test/edge.test.js, tools/edge-browser.cjs, docs/edge-cases-20261013.md and verification.md.
+- Data/policy: no schema/key/version/retention/achievement/rule change. No external service, paid change, identity, analytics or storage expansion.
+- Follow-up review: parent reviews integration, existing campaign solutions and actual captures; physical IME/touch and cross-tab races remain unverified. Browser-only fixtures are explicitly labeled; Node regression tests are included in existing CI commands. No commit/push/deploy by this owner.
+
+
 ## D12 — 비교 실험과 코드 오류 안내 복구 / 2026-10-13
 
 - 맥락: 성공 이후 무엇을 비교할지 안내가 부족하고, 잘못된 코드 다음에 정상 코드를 적용해도 이전 오류 문구가 남았습니다.

@@ -370,6 +370,7 @@ canvas.onpointerdown = (e) => {
 canvas.onpointermove = (e) => { if (dragging) aimAt(e); };
 canvas.onpointerup = canvas.onpointercancel = canvas.onlostpointercapture = () => { dragging = false; };
 canvas.onkeydown = (e) => {
+  if (e.isComposing || (e.key === " " && e.repeat)) return;
   if (e.key === " ") { e.preventDefault(); launch(); }
   else if (phase === "aim" && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
     e.preventDefault();
